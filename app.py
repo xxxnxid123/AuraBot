@@ -20,7 +20,6 @@ ALLOWED_USERS = get_ids('ALLOWED_USERS')
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# Твой легендарный список фраз
 AURA_QUOTES = [
     "Конечно", "А как иначе", "Черт возьми", "А когда не делали", 
     "Никогда не делали", "Делаем", "На колени", "Возможно", 
@@ -44,10 +43,9 @@ HELP_TEXT = (
     "🍀 <code>Аура удача</code>\n"
     "🎲 <code>Аура кости</code> (или <code>пара</code>)\n"
     "📜 <code>Аура команды</code> - показать это меню\n\n"
-    "<i>Работаю как раб ради вас. Цените это <3 </i>"
+    "<i>Работаю как раб ради вас. Цените это &lt;3</i>"
 )
 
-# --- ВЕБ-СЕРВЕР (Для UptimeRobot) ---
 async def handle(request):
     return web.Response(text="Aura is alive!")
 
@@ -66,7 +64,8 @@ async def start_uptime_server():
 async def cmd_start(message: types.Message):
     await message.reply(HELP_TEXT)
 
-@dp.message(is_allowed_group, is_allowed_user, F.text.lower() == "аура команды")
+# Исправленная команда (теперь ловит и "аура команды", и "Аура команды")
+@dp.message(is_allowed_group, is_allowed_user, F.text.lower().startswith("аура команды"))
 async def aura_help_cmd(message: types.Message):
     await message.reply(HELP_TEXT)
 
@@ -76,7 +75,7 @@ async def welcome_new_member(message: types.Message):
         if user.id == (await bot.get_me()).id:
             await message.answer(f"Привет всем! {HELP_TEXT}")
         else:
-            await message.answer(f"Привет, {user.first_name}! Я Аура. Напиши <b>Аура команды</b>, чтобы узнать, что я могу.")
+            await message.answer(f"Привет, {user.first_name}! Я Аура. Напиши <b>Аура команды</b>.")
 
 @dp.message(is_allowed_group, is_allowed_user, F.text.lower().startswith("аура вероятность"))
 async def aura_probability(message: types.Message):
@@ -84,7 +83,7 @@ async def aura_probability(message: types.Message):
 
 @dp.message(is_allowed_group, is_allowed_user, F.text.lower().startswith("аура да нет"))
 async def aura_yes_no(message: types.Message):
-    ans = random.choice(AURA_QUOTES) # Теперь отвечает твоими фразами
+    ans = random.choice(AURA_QUOTES)
     await message.reply(f"🎱 Ответ: <b>{ans}</b>")
 
 @dp.message(is_allowed_group, is_allowed_user, F.text.lower().startswith("аура фраза"))
@@ -114,7 +113,6 @@ async def aura_anon_message(message: types.Message):
         except: continue
     await message.reply("✅ Отправлено!")
 
-# --- ЗАПУСК ---
 async def main():
     if not TOKEN: return
     asyncio.create_task(start_uptime_server())
