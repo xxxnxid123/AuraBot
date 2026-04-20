@@ -6,11 +6,9 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-# --- ПОЛУЧЕНИЕ НАСТРОЕК ИЗ ОКРУЖЕНИЯ ---
-# Эти данные мы не пишем текстом, а берем из системы
+# --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
 
-# ID групп и пользователей передадим строкой через запятую в настройках Render
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
     return [int(i.strip()) for i in data.split(",") if i.strip().replace("-", "").isdigit()]
@@ -21,14 +19,24 @@ ALLOWED_USERS = get_ids('ALLOWED_USERS')
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
+# Список твоих легендарных фраз
+AURA_QUOTES = [
+    "Конечно", "А как иначе", "Черт возьми", "А когда не делали", 
+    "Никогда не делали", "Делаем", "На колени", "Возможно", 
+    "Это победа", "Легенда", "Внатуре", "Это реально круто", 
+    "Естественно", "Че они там курят", "Потихоньку", "Дай Бог", 
+    "Я это запомню", "Я это не запомню", "Я не мафия", "Я мафия", 
+    "Я тебе доверяю", "Вам че денег дать", "Че она несет", "Мед по телу"
+]
+
 # --- ФИЛЬТРЫ ---
 is_allowed_user = F.from_user.id.in_(ALLOWED_USERS)
 is_allowed_group = F.chat.id.in_(ALLOWED_GROUPS)
 is_private_chat = F.chat.type == "private"
 
-# --- ВЕБ-СЕРВЕР ДЛЯ UPTIME ROBOT ---
+# --- ВЕБ-СЕРВЕР ---
 async def handle(request):
-    return web.Response(text="Aura is alive and protected!")
+    return web.Response(text="Aura is alive!")
 
 async def start_uptime_server():
     app = web.Application()
@@ -47,8 +55,15 @@ async def aura_probability(message: types.Message):
 
 @dp.message(is_allowed_group, is_allowed_user, F.text.lower().startswith("аура да нет"))
 async def aura_yes_no(message: types.Message):
-    ans = random.choice(["Да", "Нет", "Возможно", "Точно нет", "Да!"])
+    # Добавил твои фразы в рандом
+    ans = random.choice(["Конечно", "Возможно", "А как иначе", "Точно нет", "Да!", "Нет."])
     await message.reply(f"🎱 Ответ: <b>{ans}</b>")
+
+# НОВАЯ КОМАНДА: Аура фраза
+@dp.message(is_allowed_group, is_allowed_user, F.text.lower().startswith("аура фраза"))
+async def aura_random_quote(message: types.Message):
+    quote = random.choice(AURA_QUOTES)
+    await message.reply(f"💬 <b>{quote}</b>")
 
 @dp.message(is_allowed_group, is_allowed_user, F.text.lower().startswith("аура кто"))
 async def aura_who(message: types.Message):
@@ -79,9 +94,7 @@ async def aura_anon_message(message: types.Message):
 
 # --- ЗАПУСК ---
 async def main():
-    if not TOKEN:
-        print("❌ ОШИБКА: Токен не найден в переменных окружения!")
-        return
+    if not TOKEN: return
     asyncio.create_task(start_uptime_server())
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
