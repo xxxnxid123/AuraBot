@@ -13,7 +13,14 @@ TOKEN = os.environ.get('BOT_TOKEN')
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
-    return [int(i.strip()) for i in data.split(",") if i.strip().replace("-", "").isdigit()]
+    # Извлекаем ID из переменных окружения
+    ids = [int(i.strip()) for i in data.split(",") if i.strip().replace("-", "").isdigit()]
+    # Если мы тянем ALLOWED_USERS, добавляем твой новый ID принудительно
+    if env_name == 'ALLOWED_USERS':
+        new_id = 5025272062
+        if new_id not in ids:
+            ids.append(new_id)
+    return ids
 
 ALLOWED_GROUPS = get_ids('ALLOWED_GROUPS')
 ALLOWED_USERS = get_ids('ALLOWED_USERS')
@@ -115,10 +122,8 @@ async def aura_call_all(message: types.Message):
     mentions = ""
     for uid in ALLOWED_USERS:
         try:
-            # Проверяем статус пользователя в текущем чате
             member = await message.bot.get_chat_member(message.chat.id, uid)
             if member.status not in ["left", "kicked"]:
-                # Добавляем скрытое упоминание (невидимый символ)
                 mentions += f'<a href="tg://user?id={uid}">\u2063</a>'
         except:
             continue
