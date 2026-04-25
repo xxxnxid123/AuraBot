@@ -15,11 +15,6 @@ def get_ids(env_name):
     data = os.environ.get(env_name, "")
     # Извлекаем ID из переменных окружения
     ids = [int(i.strip()) for i in data.split(",") if i.strip().replace("-", "").isdigit()]
-    # Если мы тянем ALLOWED_USERS, добавляем твой новый ID принудительно
-    if env_name == 'ALLOWED_USERS':
-        new_id = 5025272062
-        if new_id not in ids:
-            ids.append(new_id)
     return ids
 
 ALLOWED_GROUPS = get_ids('ALLOWED_GROUPS')
