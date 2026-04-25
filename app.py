@@ -65,6 +65,7 @@ HELP_TEXT = (
     "💬 <code>Аура фраза</code> - выдать базу\n"
     "🍀 <code>Аура удача</code>\n"
     "🎲 <code>Аура кости</code>\n"
+    "🎲 <code>Аура кости пара</code>\n"
     "🔢 <code>Аура число [от] [до]</code>\n"
     "💎 <code>Аура аура</code> - узнать свою ауру сейчас\n"
     "📢 <code>Аура сбор</code> - общий сбор, тегнуть пользователей чата\n"
@@ -129,6 +130,7 @@ async def goodbye_member(message: types.Message):
         text = random.choice(LEAVE_VARIATIONS).format(name=name)
     await message.answer(text)
 
+# ГЛАВНЫЙ ОБРАБОТЧИК (Команды + Мат)
 @dp.message(is_allowed_group, F.text)
 async def main_group_handler(message: types.Message):
     msg_text = message.text.lower()
