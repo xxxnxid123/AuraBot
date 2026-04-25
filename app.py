@@ -31,7 +31,7 @@ YES_NO_ANSWERS = ["Я думаю, что ДА", "Скорее всего, ДА",
 REPEAT_PHRASES = ["Я повторяюсь... Ответ: ", "Склероз? Я уже говорила: ", "Я же только что отвечала: ", "Мое мнение не изменилось: ", "У тебя дежавю? Ответ тот же: ", "Слушай внимательно, ответ: "]
 AURA_VALUES = [67, 34, 69, 89, 322, 42, 52, 82, 1488, 228, "пульсирует синим", "позорище, у тебя нет ауры", "пронырливая", "скудная", "невероятная", "бесконечная"]
 
-# Варианты приветствий (с акцентом на "впервые")
+# Варианты приветствий
 WELCOME_VARIATIONS = [
     "Привет, {name}! Я Аура. Добро пожаловать в чат. Если вы тут впервые, учтите, что команды будут доступны после включения вас в белый список. Меню: <b>Аура команды</b>.",
     "Рада знакомству, {name}! Я Аура. Добро пожаловать. Если вы тут впервые, команды станут доступны, как только вас внесут в список доступа. Список команд: <b>Аура команды</b>.",
@@ -61,6 +61,7 @@ HELP_TEXT = (
     "<b>Доступные команды:</b>\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
     "🎱 <code>Аура да нет [вопрос]</code>\n"
+    "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
     "💬 <code>Аура фраза</code> - выдать базу\n"
     "🍀 <code>Аура удача</code>\n"
     "🎲 <code>Аура кости</code>\n"
@@ -128,13 +129,11 @@ async def goodbye_member(message: types.Message):
         text = random.choice(LEAVE_VARIATIONS).format(name=name)
     await message.answer(text)
 
-# ГЛАВНЫЙ ОБРАБОТЧИК (Команды + Мат)
 @dp.message(is_allowed_group, F.text)
 async def main_group_handler(message: types.Message):
     msg_text = message.text.lower()
     uid = message.from_user.id
 
-    # 1. Проверка на команду
     if msg_text.startswith("аура"):
         if uid not in ALLOWED_USERS:
             return
@@ -169,6 +168,16 @@ async def main_group_handler(message: types.Message):
             else:
                 ans = random.choice(YES_NO_ANSWERS); save_answer(message.chat.id, question, ans)
                 await message.reply(f"🎱 Ответ: <b>{ans}</b>")
+
+        elif "выбор" in msg_text:
+            content = msg_text.replace("аура выбор", "").strip()
+            if " или " in content:
+                repeated = check_repeat(message.chat.id, content)
+                if repeated: await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
+                else:
+                    options = content.split(" или "); res = random.choice(options).strip()
+                    save_answer(message.chat.id, content, res); await message.reply(f"⚖️ Мой выбор: <b>{res}</b>")
+            else: await message.reply("Разделяй варианты словом <b>или</b>")
         
         elif "удач" in msg_text:
             luck = f"{random.randint(0, 100)}%"; await message.reply(f"🍀 Удача сегодня: <b>{luck}</b>")
@@ -204,7 +213,6 @@ async def main_group_handler(message: types.Message):
 
         return
 
-    # 2. Проверка на мат (шанс 25%)
     if any(word in msg_text for word in BAD_WORDS):
         if random.random() < 0.25:
             await message.reply(random.choice(SHAME_VARIATIONS))
