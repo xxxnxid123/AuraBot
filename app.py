@@ -124,7 +124,7 @@ async def aura_call_all(message: types.Message):
             continue
     
     if mentions:
-        await message.answer(f"📢 <b>Общий сбор легенд в этом чате!</b>{mentions}")
+        await message.answer(f"📢 <b>Общий сбор!</b>{mentions}")
     else:
         await message.reply("Никого из списка доступа в этом чате не найдено.")
 
