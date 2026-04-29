@@ -29,7 +29,12 @@ USER_JOINS_TODAY = {}
 AURA_QUOTES = ["Конечно", "А как иначе", "Черт возьми", "А когда не делали", "Делаем", "На колени", "Возможно", "Это победа", "Легенда", "Внатуре", "Это реально круто", "Естественно", "Че они там курят", "Потихоньку", "Дай Бог", "Я это запомню", "Я это не запомню", "Я не мафия", "Я мафия", "Я тебе доверяю", "Вам че денег дать", "Че она несет", "Мед по телу"]
 YES_NO_ANSWERS = ["Я думаю, что ДА", "Скорее всего, ДА", "Конечно, ДА", "Однозначно ДА", "Я думаю, что НЕТ", "Скорее всего, НЕТ", "Точно НЕТ", "Вообще без вариантов, НЕТ", "Спроси позже, я в раздумьях", "Мои сенсоры говорят - ДА", "Звезды нашептали - НЕТ"]
 REPEAT_PHRASES = ["Я повторяюсь... Ответ: ", "Склероз? Я уже говорила: ", "Я же только что отвечала: ", "Мое мнение не изменилось: ", "У тебя дежавю? Ответ тот же: ", "Слушай внимательно, ответ: "]
-AURA_VALUES = [67, 34, 69, 89, 322, 42, 52, 82, 1488, 228, "пульсирует синим", "позорище, у тебя нет ауры", "пронырливая", "скудная", "невероятная", "бесконечная"]
+AURA_VALUES = [
+    67, 34, 69, 89, 322, 42, 52, 82, 1488, 228, 
+    "пульсирует синим", "позорище, у тебя нет ауры", "пронырливая", "скудная", "невероятная", "бесконечная",
+    "получил(а) много ауры незаконным путем", "грязная", "чистая", "выронил ауру", "украл чужую ауру", 
+    "пожертвовал свою ауру нуждающимся", "взял микрозайм на ауру"
+]
 
 WELCOME_VARIATIONS = [
     "Привет, {name}! Я Аура. Добро пожаловать в чат. Если вы тут впервые, учтите, что команды будут доступны после включения вас в белый список. Меню: <b>Аура команды</b>.",
@@ -66,7 +71,7 @@ HELP_TEXT = (
     "🎲 <code>Аура кости пара</code>\n"
     "🔢 <code>Аура число [от] [до]</code>\n"
     "⏳ <code>Аура таймер [сек]</code>\n"
-    "💎 <code>Аура аура</code> - узнать свою ауру сейчас\n"
+    "💎 <code>Аура аура [текст]</code> - узнать свою ауру или чью-то\n"
     "📢 <code>Аура сбор</code> - общий сбор, тегнуть пользователей чата\n"
     "📜 <code>Аура команды</code> - показать это меню\n\n"
     "📩 <b>Личные сообщения:</b>\n"
@@ -131,6 +136,7 @@ async def goodbye_member(message: types.Message):
         text = random.choice(LEAVE_VARIATIONS).format(name=name)
     await message.answer(text)
 
+# ГЛАВНЫЙ ОБРАБОТЧИК (Команды + Мат)
 @dp.message(is_allowed_group, F.text)
 async def main_group_handler(message: types.Message):
     msg_text = message.text.lower()
@@ -184,12 +190,17 @@ async def main_group_handler(message: types.Message):
         elif "удач" in msg_text:
             luck = f"{random.randint(0, 100)}%"; await message.reply(f"🍀 Удача сегодня: <b>{luck}</b>")
         
-        elif msg_text == "аура аура":
+        elif msg_text.startswith("аура аура"):
+            target = message.text[9:].strip()
             now = time.time()
-            if uid in AURA_COOLDOWN and (now - AURA_COOLDOWN[uid]) < 10:
-                await message.reply(f"⏳ Подожди {int(10-(now-AURA_COOLDOWN[uid]))} сек."); return
-            res = random.choice(AURA_VALUES); AURA_COOLDOWN[uid] = now
-            await message.reply(f"💎 Твоя аура: <b>{res}</b>")
+            if not target:
+                if uid in AURA_COOLDOWN and (now - AURA_COOLDOWN[uid]) < 10:
+                    await message.reply(f"⏳ Подожди {int(10-(now-AURA_COOLDOWN[uid]))} сек."); return
+                res = random.choice(AURA_VALUES); AURA_COOLDOWN[uid] = now
+                await message.reply(f"💎 Твоя аура: <b>{res}</b>")
+            else:
+                res = random.choice(AURA_VALUES)
+                await message.reply(f"💎 Аура <b>{target}</b>: <b>{res}</b>")
         
         elif "фраз" in msg_text:
             await message.reply(f"💬 <b>{random.choice(AURA_QUOTES)}</b>")
