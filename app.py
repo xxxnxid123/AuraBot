@@ -2,6 +2,7 @@ import asyncio
 import random
 import os
 import time
+import json
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
@@ -10,6 +11,7 @@ from aiogram.filters import CommandStart
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
+STATS_FILE = "stats.json"
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
@@ -21,10 +23,28 @@ ALLOWED_USERS = get_ids('ALLOWED_USERS')
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
+# --- ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛОМ СТАТИСТИКИ ---
+def load_stats():
+    if os.path.exists(STATS_FILE):
+        try:
+            with open(STATS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_stats(stats_data):
+    try:
+        with open(STATS_FILE, "w", encoding="utf-8") as f:
+            json.dump(stats_data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Ошибка сохранения статистики: {e}")
+
 # --- ПАМЯТЬ БОТА ---
 LAST_ANSWERS = {}
 AURA_COOLDOWN = {}
 USER_JOINS_TODAY = {} 
+USER_MESSAGES = load_stats() # Загружаем сохраненную статику при старте
 
 AURA_QUOTES = ["Конечно", "А как иначе", "Черт возьми", "А когда не делали", "Делаем", "На колени", "Возможно", "Это победа", "Легенда", "Внатуре", "Это реально круто", "Естественно", "Че они там курят", "Потихоньку", "Дай Бог", "Я это запомню", "Я это не запомню", "Я не мафия", "Я мафия", "Я тебе доверяю", "Вам че денег дать", "Че она несет", "Мед по телу"]
 YES_NO_ANSWERS = ["Я думаю, что ДА", "Скорее всего, ДА", "Конечно, ДА", "Однозначно ДА", "Я думаю, что НЕТ", "Скорее всего, НЕТ", "Точно НЕТ", "Вообще без вариантов, НЕТ", "Спроси позже, я в раздумьях", "Мои сенсоры говорят - ДА", "Звезды нашептали - НЕТ"]
@@ -36,7 +56,6 @@ AURA_VALUES = [
     "пожертвовал свою ауру нуждающимся", "взял микрозайм на ауру", "отбывает срок за кражу ауры"
 ]
 
-# Эксклюзивные варианты для самого бота
 SELF_AURA_VALUES = [
     "Абсолютная", 
     "Ослепительная. Не смотри на меня", 
@@ -76,6 +95,7 @@ HELP_TEXT = (
     "🔮 <code>Аура вероятность [текст]</code>\n"
     "🎱 <code>Аура да нет [вопрос]</code>\n"
     "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
+    "📊 <code>Аура стата [час/сутки/неделя/месяц]</code>\n"
     "💬 <code>Аура фраза</code> - выдать базу\n"
     "🍀 <code>Аура удача</code>\n"
     "🎲 <code>Аура кости</code>\n"
@@ -147,17 +167,56 @@ async def goodbye_member(message: types.Message):
         text = random.choice(LEAVE_VARIATIONS).format(name=name)
     await message.answer(text)
 
-# ГЛАВНЫЙ ОБРАБОТЧИК (Команды + Мат)
+# ГЛАВНЫЙ ОБРАБОТЧИК (Команды + Мат + Статистика)
 @dp.message(is_allowed_group, F.text)
 async def main_group_handler(message: types.Message):
     msg_text = message.text.lower()
-    uid = message.from_user.id
+    uid = str(message.from_user.id) # JSON ключи — строки
+    uname = message.from_user.first_name
+    now = time.time()
+
+    # Сбор статистики сообщений
+    if uid not in USER_MESSAGES:
+        USER_MESSAGES[uid] = {"name": uname, "times": []}
+    USER_MESSAGES[uid]["times"].append(now)
+    USER_MESSAGES[uid]["name"] = uname
+    save_stats(USER_MESSAGES)
 
     if msg_text.startswith("аура"):
-        if uid not in ALLOWED_USERS:
+        if int(uid) not in ALLOWED_USERS:
             return
 
-        if "сбор" in msg_text:
+        if "стата" in msg_text or "статистика" in msg_text:
+            periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
+            target_period = None
+            period_name = "все время"
+            
+            for p_key, p_val in periods.items():
+                if p_key in msg_text:
+                    target_period = p_val
+                    period_name = p_key
+                    break
+            
+            stats = []
+            for user_id, data in USER_MESSAGES.items():
+                if target_period:
+                    count = sum(1 for t in data["times"] if (now - t) <= target_period)
+                else:
+                    count = len(data["times"])
+                if count > 0:
+                    stats.append((data["name"], count))
+            
+            if not stats:
+                await message.reply("Статистика пуста.")
+                return
+
+            stats.sort(key=lambda x: x[1], reverse=True)
+            report = f"📊 <b>Статистика ({period_name}):</b>\n"
+            for i, (name, cnt) in enumerate(stats[:10], 1):
+                report += f"{i}. {name} — <b>{cnt}</b>\n"
+            await message.answer(report)
+
+        elif "сбор" in msg_text:
             mentions = ""
             for target_id in ALLOWED_USERS:
                 try:
@@ -203,11 +262,10 @@ async def main_group_handler(message: types.Message):
         
         elif msg_text.startswith("аура аура"):
             target = message.text[9:].strip()
-            now = time.time()
             if not target:
-                if uid in AURA_COOLDOWN and (now - AURA_COOLDOWN[uid]) < 10:
-                    await message.reply(f"⏳ Подожди {int(10-(now-AURA_COOLDOWN[uid]))} сек."); return
-                res = random.choice(AURA_VALUES); AURA_COOLDOWN[uid] = now
+                if int(uid) in AURA_COOLDOWN and (now - AURA_COOLDOWN[int(uid)]) < 10:
+                    await message.reply(f"⏳ Подожди {int(10-(now-AURA_COOLDOWN[int(uid)]))} сек."); return
+                res = random.choice(AURA_VALUES); AURA_COOLDOWN[int(uid)] = now
                 await message.reply(f"💎 Твоя аура: <b>{res}</b>")
             elif target.lower() in ["@aurabotn_bot", "ауры", "аура", "aura"]:
                 res = random.choice(SELF_AURA_VALUES)
