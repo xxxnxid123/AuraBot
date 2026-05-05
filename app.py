@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
+from aiogram.utils.link import create_tg_link
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
@@ -198,13 +199,14 @@ async def main_group_handler(message: types.Message):
                     break
             
             stats = []
-            for user_id, data in USER_MESSAGES.items():
+            for user_id_key, data in USER_MESSAGES.items():
                 if target_period:
                     count = sum(1 for t in data["times"] if (now - t) <= target_period)
                 else:
                     count = len(data["times"])
                 if count > 0:
-                    stats.append((data["name"], count))
+                    # Сохраняем ID для создания кликабельной ссылки
+                    stats.append((data["name"], count, user_id_key))
             
             if not stats:
                 await message.reply("Статистика пуста.")
@@ -212,8 +214,10 @@ async def main_group_handler(message: types.Message):
 
             stats.sort(key=lambda x: x[1], reverse=True)
             report = f"📊 <b>Статистика ({period_name}):</b>\n"
-            for i, (name, cnt) in enumerate(stats[:10], 1):
-                report += f"{i}. {name} — <b>{cnt}</b>\n"
+            for i, (name, cnt, u_id) in enumerate(stats[:10], 1):
+                # Создаем кликабельное имя через HTML упоминание
+                link = f'<a href="tg://user?id={u_id}">{name}</a>'
+                report += f"{i}. {link} — <b>{cnt}</b>\n"
             await message.answer(report)
 
         elif "сбор" in msg_text:
