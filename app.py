@@ -34,7 +34,6 @@ if GEMINI_KEY:
         # Выбираем первую доступную или flash по умолчанию
         model_name = 'models/gemini-1.5-flash' 
         if available_models:
-            # Если в списке есть что-то другое, можно подставить оттуда
             model_name = available_models[0]
             
         model = genai.GenerativeModel(model_name)
@@ -220,14 +219,24 @@ async def main_group_handler(message: types.Message):
 
             sent_msg = await message.reply("🌀 Так, секунду, сверяюсь с космосом...")
             try:
-                # Настройка личности
+                # Настройка личности (краткость = скорость)
                 persona = (
-                    "Ты — бот по имени Аура, легенда этого чата. Ты женщина с характером. "
-                    "Твой стиль: дерзкий, уверенный, любишь немного подтроллить, но без злобы. "
-                    "Используй сленг типа 'Легенда', 'база', 'мед по телу'. "
-                    "Отвечай кратко, емко и по факту. Если вопрос глупый — подколи."
+                    "Ты — Аура, легенда этого чата. Женщина с характером, дерзкая, база. "
+                    "ОТВЕЧАЙ МАКСИМАЛЬНО КРАТКО (1-2 предложения). "
+                    "Используй сленг: 'Легенда', 'база', 'мед по телу'. "
+                    "Если вопрос глупый — подколи."
                 )
-                response = model.generate_content(f"{persona}\n\nВопрос от пользователя: {prompt}")
+                
+                # Параметры для ускорения ответа
+                gen_config = {
+                    "max_output_tokens": 150,
+                    "temperature": 0.8,
+                }
+                
+                response = model.generate_content(
+                    f"{persona}\n\nВопрос от пользователя: {prompt}",
+                    generation_config=gen_config
+                )
                 await sent_msg.edit_text(response.text)
             except Exception as e:
                 await sent_msg.edit_text(f"Ошибка: {str(e)}")
