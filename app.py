@@ -21,7 +21,6 @@ if GEMINI_KEY:
     try:
         genai.configure(api_key=GEMINI_KEY)
         
-        # Выводим инфу в логи Render (вкладка Logs)
         print(f"DEBUG: Версия библиотеки: {genai.__version__}")
         
         available_models = []
@@ -31,7 +30,6 @@ if GEMINI_KEY:
         
         print(f"DEBUG: Доступные модели: {available_models}")
 
-        # Выбираем первую доступную или flash по умолчанию
         model_name = 'models/gemini-1.5-flash' 
         if available_models:
             model_name = available_models[0]
@@ -206,7 +204,7 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        # --- НОВАЯ КОМАНДА: АУРА АСК ---
+        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК ---
         if msg_text.startswith("аура аск"):
             prompt = message.text[8:].strip()
             if not prompt:
@@ -217,29 +215,40 @@ async def main_group_handler(message: types.Message):
                 await message.reply("Мои мозги сейчас отключены (нет ключа API).")
                 return
 
-            sent_msg = await message.reply("🌀 Так, секунду, сверяюсь с космосом...")
+            sent_msg = await message.reply("Подождите, я строчу...")
             try:
-                # Настройка личности (краткость = скорость)
-                persona = (
-                    "Ты — Аура, легенда этого чата. Женщина с характером, дерзкая, база. "
-                    "ОТВЕЧАЙ МАКСИМАЛЬНО КРАТКО (1-2 предложения). "
-                    "Используй сленг: 'Легенда', 'база', 'мед по телу'. "
-                    "Если вопрос глупый — подколи."
-                )
-                
-                # Параметры для ускорения ответа
-                gen_config = {
-                    "max_output_tokens": 150,
-                    "temperature": 0.8,
-                }
-                
+                # Список слов для режима длинного ответа
+                long_trigger_words = ["сочинение", "эссе", "подробно", "распиши", "определение", "текст", "доклад"]
+                is_long = any(word in prompt.lower() for word in long_trigger_words)
+
+                if is_long:
+                    persona = (
+                        "Ты — Аура, легенда этого чата, женщина (вроде бы женщина) с характером. "
+                        "Сейчас напиши ПОДРОБНЫЙ и РАЗВЕРНУТЫЙ ответ. "
+                        "Твой стиль: база, уверенность, экспертность."
+                    )
+                    max_tokens = 2000
+                else:
+                    persona = (
+                        "Ты — Аура, легенда этого чата, женщина с характером. "
+                        "Отвечай емко, но ПОЛНЫМИ предложениями. Не обрывай мысли. "
+                        "Используй сленг: 'Легенда', 'база', 'мед по телу'. "
+                    )
+                    max_tokens = 400
+
                 response = model.generate_content(
-                    f"{persona}\n\nВопрос от пользователя: {prompt}",
-                    generation_config=gen_config
+                    f"{persona}\n\nВопрос: {prompt}",
+                    generation_config={"max_output_tokens": max_tokens, "temperature": 0.7}
                 )
-                await sent_msg.edit_text(response.text)
+                
+                if response.text:
+                    await sent_msg.edit_text(response.text)
+                else:
+                    await sent_msg.edit_text("Космос молчит... Попробуй перефразировать.")
+
             except Exception as e:
-                await sent_msg.edit_text(f"Ошибка: {str(e)}")
+                await sent_msg.edit_text(f"Что-то связь с космосом прервалась. Попробуй позже.")
+                print(f"Ошибка Gemini: {e}")
             return
 
         elif "стата" in msg_text or "статистика" in msg_text:
