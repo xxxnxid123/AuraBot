@@ -14,17 +14,9 @@ from google.api_core import exceptions
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
-GEMINI_KEY = os.environ.get('GEMINI_KEY')
+# Теперь поддерживаем несколько ключей через запятую
+GEMINI_KEYS = [k.strip() for k in os.environ.get('GEMINI_KEY', "").split(",") if k.strip()]
 STATS_FILE = "stats.json"
-
-# --- ДИАГНОСТИКА И НАСТРОЙКА НЕЙРОСЕТИ ---
-if GEMINI_KEY:
-    try:
-        genai.configure(api_key=GEMINI_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        print("DEBUG: Gemini настроен успешно")
-    except Exception as e:
-        print(f"ОШИБКА ДИАГНОСТИКИ: {e}")
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
@@ -190,45 +182,54 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК (ФОРМАЛЬНЫЙ ПОМОЩНИК) ---
+        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК (С РОТАЦИЕЙ КЛЮЧЕЙ) ---
         if msg_text.startswith("аура аск"):
             prompt = message.text[8:].strip()
             if not prompt:
                 await message.reply("Напишите вопрос. Пример: <code>Аура аск что такое фотосинтез?</code>")
                 return
             
-            if not GEMINI_KEY:
-                await message.reply("Модуль ИИ временно недоступен.")
+            if not GEMINI_KEYS:
+                await message.reply("Ключи ИИ не найдены.")
                 return
 
             sent_msg = await message.reply("⏳ Формирую ответ...")
-            try:
-                persona = (
-                    "Ты — полезный и вежливый ассистент по имени Аура. "
-                    "Твоя задача: давать точные, структурированные и формальные ответы. "
-                    "Если пользователь просит написать сочинение, эссе или доклад — пиши их в академическом стиле. "
-                    "Если просит определение — давай его четко. "
-                    "Будь максимально полезной."
-                )
+            
+            # Пробуем ключи по очереди, если лимит исчерпан
+            success = False
+            random.shuffle(GEMINI_KEYS) # Перемешиваем, чтобы не долбить всегда один и тот же первым
+            
+            for key in GEMINI_KEYS:
+                try:
+                    genai.configure(api_key=key)
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    persona = (
+                        "Ты — полезный и вежливый ассистент по имени Аура. "
+                        "Твоя задача: давать точные, структурированные и формальные ответы. "
+                        "Если просят сочинение или доклад — пиши в академическом стиле. "
+                        "Не используй сленг, будь максимально полезной."
+                    )
 
-                response = model.generate_content(
-                    f"{persona}\n\nВопрос: {prompt}",
-                    generation_config={
-                        "max_output_tokens": 2048,
-                        "temperature": 0.5
-                    }
-                )
+                    response = model.generate_content(
+                        f"{persona}\n\nВопрос: {prompt}",
+                        generation_config={"max_output_tokens": 2048, "temperature": 0.5}
+                    )
+                    
+                    if response.text:
+                        await sent_msg.edit_text(response.text)
+                        success = True
+                        break # Если получили ответ, выходим из цикла ключей
                 
-                if response.text:
-                    await sent_msg.edit_text(response.text)
-                else:
-                    await sent_msg.edit_text("Не удалось сгенерировать ответ.")
+                except exceptions.ResourceExhausted:
+                    print(f"DEBUG: Ключ закончился, пробуем следующий...")
+                    continue # Пробуем следующий ключ
+                except Exception as e:
+                    print(f"Ошибка конкретного ключа: {e}")
+                    continue
 
-            except exceptions.ResourceExhausted:
-                await sent_msg.delete()
-            except Exception as e:
-                await sent_msg.edit_text("Произошла ошибка при обращении к ИИ.")
-                print(f"Ошибка Gemini: {e}")
+            if not success:
+                await sent_msg.edit_text("Все мои мыслительные ресурсы на сегодня исчерпаны. Попробуйте позже.")
             return
 
         elif "стата" in msg_text or "статистика" in msg_text:
