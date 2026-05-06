@@ -18,8 +18,12 @@ STATS_FILE = "stats.json"
 
 # Настройка нейросети
 if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    try:
+        genai.configure(api_key=GEMINI_KEY)
+        # Убираем -latest, используем базовое имя, оно самое стабильное
+        model = genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        print(f"Ошибка конфига Gemini: {e}")
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
