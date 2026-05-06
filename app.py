@@ -10,6 +10,7 @@ from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.utils.link import create_tg_link
 import google.generativeai as genai
+from google.api_core import exceptions
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
@@ -20,23 +21,8 @@ STATS_FILE = "stats.json"
 if GEMINI_KEY:
     try:
         genai.configure(api_key=GEMINI_KEY)
-        
-        print(f"DEBUG: Версия библиотеки: {genai.__version__}")
-        
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        print(f"DEBUG: Доступные модели: {available_models}")
-
-        model_name = 'models/gemini-1.5-flash' 
-        if available_models:
-            model_name = available_models[0]
-            
-        model = genai.GenerativeModel(model_name)
-        print(f"DEBUG: Использую модель: {model_name}")
-
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        print("DEBUG: Gemini настроен успешно")
     except Exception as e:
         print(f"ОШИБКА ДИАГНОСТИКИ: {e}")
 
@@ -204,50 +190,44 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК ---
+        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК (ФОРМАЛЬНЫЙ ПОМОЩНИК) ---
         if msg_text.startswith("аура аск"):
             prompt = message.text[8:].strip()
             if not prompt:
-                await message.reply("Легенда, ты забыл сам вопрос. Пиши: <code>Аура аск [твой вопрос]</code>")
+                await message.reply("Напишите вопрос. Пример: <code>Аура аск что такое фотосинтез?</code>")
                 return
             
             if not GEMINI_KEY:
-                await message.reply("Мои мозги сейчас отключены (нет ключа API).")
+                await message.reply("Модуль ИИ временно недоступен.")
                 return
 
-            sent_msg = await message.reply("Подождите, я строчу...")
+            sent_msg = await message.reply("⏳ Формирую ответ...")
             try:
-                # Список слов для режима длинного ответа
-                long_trigger_words = ["сочинение", "эссе", "подробно", "распиши", "определение", "текст", "доклад"]
-                is_long = any(word in prompt.lower() for word in long_trigger_words)
-
-                if is_long:
-                    persona = (
-                        "Ты — Аура, легенда этого чата, женщина (вроде бы женщина) с характером. "
-                        "Сейчас напиши ПОДРОБНЫЙ и РАЗВЕРНУТЫЙ ответ. "
-                        "Твой стиль: база, уверенность, экспертность."
-                    )
-                    max_tokens = 2000
-                else:
-                    persona = (
-                        "Ты — Аура, легенда этого чата, женщина с характером. "
-                        "Отвечай емко, но ПОЛНЫМИ предложениями. Не обрывай мысли. "
-                        "Используй сленг: 'Легенда', 'база', 'мед по телу'. "
-                    )
-                    max_tokens = 400
+                persona = (
+                    "Ты — полезный и вежливый ассистент по имени Аура. "
+                    "Твоя задача: давать точные, структурированные и формальные ответы. "
+                    "Если пользователь просит написать сочинение, эссе или доклад — пиши их в академическом стиле. "
+                    "Если просит определение — давай его четко. "
+                    "Будь максимально полезной."
+                )
 
                 response = model.generate_content(
                     f"{persona}\n\nВопрос: {prompt}",
-                    generation_config={"max_output_tokens": max_tokens, "temperature": 0.7}
+                    generation_config={
+                        "max_output_tokens": 2048,
+                        "temperature": 0.5
+                    }
                 )
                 
                 if response.text:
                     await sent_msg.edit_text(response.text)
                 else:
-                    await sent_msg.edit_text("Космос молчит... Попробуй перефразировать.")
+                    await sent_msg.edit_text("Не удалось сгенерировать ответ.")
 
+            except exceptions.ResourceExhausted:
+                await sent_msg.delete()
             except Exception as e:
-                await sent_msg.edit_text(f"Что-то связь с космосом прервалась. Попробуй позже.")
+                await sent_msg.edit_text("Произошла ошибка при обращении к ИИ.")
                 print(f"Ошибка Gemini: {e}")
             return
 
