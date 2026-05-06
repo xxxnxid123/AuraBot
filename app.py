@@ -19,7 +19,7 @@ STATS_FILE = "stats.json"
 # Настройка нейросети
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-1.5-pro')
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
@@ -208,7 +208,7 @@ async def main_group_handler(message: types.Message):
                 response = model.generate_content(f"{persona}\n\nВопрос от пользователя: {prompt}")
                 await sent_msg.edit_text(response.text)
             except Exception as e:
-                await sent_msg.edit_text("Что-то связь с космосом прервалась. Попробуй позже.")
+                await sent_msg.edit_text(f"Ошибка: {str(e)}")
             return
 
         elif "стата" in msg_text or "статистика" in msg_text:
