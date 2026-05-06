@@ -16,14 +16,32 @@ TOKEN = os.environ.get('BOT_TOKEN')
 GEMINI_KEY = os.environ.get('GEMINI_KEY')
 STATS_FILE = "stats.json"
 
-# Настройка нейросети
+# --- ДИАГНОСТИКА И НАСТРОЙКА НЕЙРОСЕТИ ---
 if GEMINI_KEY:
     try:
         genai.configure(api_key=GEMINI_KEY)
-        # Убираем -latest, используем базовое имя, оно самое стабильное
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Выводим инфу в логи Render (вкладка Logs)
+        print(f"DEBUG: Версия библиотеки: {genai.__version__}")
+        
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name)
+        
+        print(f"DEBUG: Доступные модели: {available_models}")
+
+        # Выбираем первую доступную или flash по умолчанию
+        model_name = 'models/gemini-1.5-flash' 
+        if available_models:
+            # Если в списке есть что-то другое, можно подставить оттуда
+            model_name = available_models[0]
+            
+        model = genai.GenerativeModel(model_name)
+        print(f"DEBUG: Использую модель: {model_name}")
+
     except Exception as e:
-        print(f"Ошибка конфига Gemini: {e}")
+        print(f"ОШИБКА ДИАГНОСТИКИ: {e}")
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
