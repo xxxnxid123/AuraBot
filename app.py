@@ -19,7 +19,7 @@ STATS_FILE = "stats.json"
 # Настройка нейросети
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
