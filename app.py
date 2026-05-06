@@ -14,7 +14,7 @@ from google.api_core import exceptions
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
-# Теперь поддерживаем несколько ключей через запятую
+# Поддержка нескольких ключей через запятую
 GEMINI_KEYS = [k.strip() for k in os.environ.get('GEMINI_KEY', "").split(",") if k.strip()]
 STATS_FILE = "stats.json"
 
@@ -182,7 +182,7 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК (С РОТАЦИЕЙ КЛЮЧЕЙ) ---
+        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК (С РОТАЦИЕЙ И ИСПРАВЛЕННОЙ МОДЕЛЬЮ) ---
         if msg_text.startswith("аура аск"):
             prompt = message.text[8:].strip()
             if not prompt:
@@ -195,14 +195,16 @@ async def main_group_handler(message: types.Message):
 
             sent_msg = await message.reply("⏳ Формирую ответ...")
             
-            # Пробуем ключи по очереди, если лимит исчерпан
             success = False
-            random.shuffle(GEMINI_KEYS) # Перемешиваем, чтобы не долбить всегда один и тот же первым
+            # Перемешиваем ключи для балансировки нагрузки
+            keys_to_try = GEMINI_KEYS.copy()
+            random.shuffle(keys_to_try)
             
-            for key in GEMINI_KEYS:
+            for key in keys_to_try:
                 try:
                     genai.configure(api_key=key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    # Используем flash-latest для стабильности
+                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
                     
                     persona = (
                         "Ты — полезный и вежливый ассистент по имени Аура. "
@@ -219,13 +221,13 @@ async def main_group_handler(message: types.Message):
                     if response.text:
                         await sent_msg.edit_text(response.text)
                         success = True
-                        break # Если получили ответ, выходим из цикла ключей
+                        break
                 
                 except exceptions.ResourceExhausted:
-                    print(f"DEBUG: Ключ закончился, пробуем следующий...")
-                    continue # Пробуем следующий ключ
+                    print(f"DEBUG: Ключ исчерпан, пробую следующий...")
+                    continue 
                 except Exception as e:
-                    print(f"Ошибка конкретного ключа: {e}")
+                    print(f"Ошибка ключа: {e}")
                     continue
 
             if not success:
