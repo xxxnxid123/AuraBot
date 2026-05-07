@@ -41,6 +41,16 @@ def save_stats(stats_data):
     except Exception as e:
         print(f"Ошибка сохранения статистики: {e}")
 
+# --- ЛОГИКА СТАТУСОВ ---
+def get_status(balance):
+    if balance < 500: return "Нищий (1)"
+    if balance < 2000: return "Обычный (2)"
+    if balance < 7000: return "Суетливый (3)"
+    if balance < 20000: return "Жирный (4)"
+    if balance < 60000: return "Огромный аура (5)"
+    if balance < 150000: return "Легенда (6)"
+    return "Мёд по телу (7)"
+
 # --- ПАМЯТЬ БОТА ---
 LAST_ANSWERS = {}
 AURA_COOLDOWN = {}
@@ -92,6 +102,9 @@ is_private_chat = F.chat.type == "private"
 
 HELP_TEXT = (
     "✨ <b>Я Аура - ваш легендарный бот!</b> ✨\n\n"
+    "<b>Экономика:</b>\n"
+    "⛏ <code>Аура фарм</code> - заработать 💎\n"
+    "💰 <code>Аура баланс</code> - твой счет и статус\n\n"
     "<b>Доступные команды:</b>\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
     "🎱 <code>Аура да нет [вопрос]</code>\n"
@@ -178,7 +191,7 @@ async def main_group_handler(message: types.Message):
 
     # Сбор статистики сообщений
     if uid not in USER_MESSAGES:
-        USER_MESSAGES[uid] = {"name": uname, "times": []}
+        USER_MESSAGES[uid] = {"name": uname, "times": [], "balance": 0, "last_farm": 0}
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
     save_stats(USER_MESSAGES)
@@ -187,7 +200,26 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        if "стата" in msg_text or "статистика" in msg_text:
+        if msg_text == "аура фарм":
+            u_data = USER_MESSAGES[uid]
+            wait_time = 10800 # 3 часа
+            if now - u_data.get("last_farm", 0) < wait_time:
+                rem = int((wait_time - (now - u_data["last_farm"])) // 60)
+                await message.reply(f"⏳ Рано! Приходи через <b>{rem // 60}ч {rem % 60}м</b>")
+            else:
+                reward = random.randint(50, 450)
+                u_data["balance"] = u_data.get("balance", 0) + reward
+                u_data["last_farm"] = now
+                save_stats(USER_MESSAGES)
+                status = get_status(u_data["balance"])
+                await message.reply(f"⛏ Ты нафармил <b>{reward}</b> 💎\nТвой баланс: <b>{u_data['balance']}</b>\nТвой статус: <b>{status}</b>")
+
+        elif msg_text == "аура баланс":
+            balance = USER_MESSAGES[uid].get("balance", 0)
+            status = get_status(balance)
+            await message.reply(f"💰 Твой баланс: <b>{balance}</b> 💎\nТвой статус: <b>{status}</b>")
+
+        elif "стата" in msg_text or "статистика" in msg_text:
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
             target_period = None
             period_name = "все время"
@@ -205,8 +237,7 @@ async def main_group_handler(message: types.Message):
                 else:
                     count = len(data["times"])
                 if count > 0:
-                    # Сохраняем ID для создания кликабельной ссылки
-                    stats.append((data["name"], count, user_id_key))
+                    stats.append((data["name"], count, user_id_key, data.get("balance", 0)))
             
             if not stats:
                 await message.reply("Статистика пуста.")
@@ -214,10 +245,10 @@ async def main_group_handler(message: types.Message):
 
             stats.sort(key=lambda x: x[1], reverse=True)
             report = f"📊 <b>Статистика ({period_name}):</b>\n"
-            for i, (name, cnt, u_id) in enumerate(stats[:10], 1):
-                # Создаем кликабельное имя через HTML упоминание
+            for i, (name, cnt, u_id, bal) in enumerate(stats[:10], 1):
                 link = f'<a href="tg://user?id={u_id}">{name}</a>'
-                report += f"{i}. {link} — <b>{cnt}</b>\n"
+                status_short = get_status(bal).split(' (')[0] # Имя статуса без номера для компактности
+                report += f"{i}. {link} — <b>{cnt}</b> [{status_short}]\n"
             await message.answer(report)
 
         elif "сбор" in msg_text:
