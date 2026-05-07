@@ -44,18 +44,18 @@ def save_stats(stats_data):
 # --- ЛОГИКА СТАТУСОВ ---
 def get_status(balance):
     if balance < 500: return "Нищий (1)"
-    if balance < 2000: return "Обычный (2)"
-    if balance < 7000: return "Суетливый (3)"
-    if balance < 20000: return "Жирный (4)"
-    if balance < 60000: return "Огромный аура (5)"
-    if balance < 150000: return "Легенда (6)"
+    if balance < 1500: return "Обычный (2)"
+    if balance < 4000: return "Суетливый (3)"
+    if balance < 10000: return "Жирный (4)"
+    if balance < 25000: return "У тебя огромная аура (5)"
+    if balance < 50000: return "Легенда (6)"
     return "Мёд по телу (7)"
 
 # --- ПАМЯТЬ БОТА ---
 LAST_ANSWERS = {}
 AURA_COOLDOWN = {}
 USER_JOINS_TODAY = {} 
-USER_MESSAGES = load_stats() # Загружаем сохраненную статику при старте
+USER_MESSAGES = load_stats()
 
 AURA_QUOTES = ["Конечно", "А как иначе", "Черт возьми", "А когда не делали", "Делаем", "На колени", "Возможно", "Это победа", "Легенда", "Внатуре", "Это реально круто", "Естественно", "Че они там курят", "Потихоньку", "Дай Бог", "Я это запомню", "Я это не запомню", "Я не мафия", "Я мафия", "Я тебе доверяю", "Вам че денег дать", "Че она несет", "Мед по телу"]
 YES_NO_ANSWERS = ["Я думаю, что ДА", "Скорее всего, ДА", "Конечно, ДА", "Однозначно ДА", "Я думаю, что НЕТ", "Скорее всего, НЕТ", "Точно НЕТ", "Вообще без вариантов, НЕТ", "Спроси позже, я в раздумьях", "Мои сенсоры говорят - ДА", "Звезды нашептали - НЕТ"]
@@ -67,15 +67,7 @@ AURA_VALUES = [
     "пожертвовал свою ауру нуждающимся", "взял микрозайм на ауру", "отбывает срок за кражу ауры"
 ]
 
-SELF_AURA_VALUES = [
-    "Абсолютная", 
-    "Ослепительная. Не смотри на меня", 
-    "Бесконечная конечно", 
-    "Выиграла вашу ауру в казино", 
-    "Живу на проценты с вашей ауры", 
-    "Отмыла всю грязную ауру", 
-    "Пожертвовала ауру нуждающимся"
-]
+SELF_AURA_VALUES = ["Абсолютная", "Ослепительная. Не смотри на меня", "Бесконечная конечно", "Выиграла вашу ауру в казино", "Живу на проценты с вашей ауры", "Отмыла всю грязную ауру", "Пожертвовала ауру нуждающимся"]
 
 WELCOME_VARIATIONS = [
     "Привет, {name}! Я Аура. Добро пожаловать в чат. Если вы тут впервые, учтите, что команды будут доступны после включения вас в белый список. Меню: <b>Аура команды</b>.",
@@ -181,15 +173,13 @@ async def goodbye_member(message: types.Message):
         text = random.choice(LEAVE_VARIATIONS).format(name=name)
     await message.answer(text)
 
-# ГЛАВНЫЙ ОБРАБОТЧИК (Команды + Мат + Статистика)
 @dp.message(is_allowed_group, F.text)
 async def main_group_handler(message: types.Message):
     msg_text = message.text.lower()
-    uid = str(message.from_user.id) # JSON ключи — строки
+    uid = str(message.from_user.id)
     uname = message.from_user.first_name
     now = time.time()
 
-    # Сбор статистики сообщений
     if uid not in USER_MESSAGES:
         USER_MESSAGES[uid] = {"name": uname, "times": [], "balance": 0, "last_farm": 0}
     USER_MESSAGES[uid]["times"].append(now)
@@ -197,12 +187,11 @@ async def main_group_handler(message: types.Message):
     save_stats(USER_MESSAGES)
 
     if msg_text.startswith("аура"):
-        if int(uid) not in ALLOWED_USERS:
-            return
+        if int(uid) not in ALLOWED_USERS: return
 
         if msg_text == "аура фарм":
             u_data = USER_MESSAGES[uid]
-            wait_time = 10800 # 3 часа
+            wait_time = 10800
             if now - u_data.get("last_farm", 0) < wait_time:
                 rem = int((wait_time - (now - u_data["last_farm"])) // 60)
                 await message.reply(f"⏳ Рано! Приходи через <b>{rem // 60}ч {rem % 60}м</b>")
@@ -223,31 +212,24 @@ async def main_group_handler(message: types.Message):
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
             target_period = None
             period_name = "все время"
-            
             for p_key, p_val in periods.items():
                 if p_key in msg_text:
                     target_period = p_val
                     period_name = p_key
                     break
-            
             stats = []
             for user_id_key, data in USER_MESSAGES.items():
-                if target_period:
-                    count = sum(1 for t in data["times"] if (now - t) <= target_period)
-                else:
-                    count = len(data["times"])
-                if count > 0:
-                    stats.append((data["name"], count, user_id_key, data.get("balance", 0)))
-            
+                if target_period: count = sum(1 for t in data["times"] if (now - t) <= target_period)
+                else: count = len(data["times"])
+                if count > 0: stats.append((data["name"], count, user_id_key, data.get("balance", 0)))
             if not stats:
                 await message.reply("Статистика пуста.")
                 return
-
             stats.sort(key=lambda x: x[1], reverse=True)
             report = f"📊 <b>Статистика ({period_name}):</b>\n"
             for i, (name, cnt, u_id, bal) in enumerate(stats[:10], 1):
                 link = f'<a href="tg://user?id={u_id}">{name}</a>'
-                status_short = get_status(bal).split(' (')[0] # Имя статуса без номера для компактности
+                status_short = get_status(bal).split(' (')[0]
                 report += f"{i}. {link} — <b>{cnt}</b> [{status_short}]\n"
             await message.answer(report)
 
@@ -262,8 +244,7 @@ async def main_group_handler(message: types.Message):
             if mentions: await message.answer(f"📢 <b>Общий сбор!</b>{mentions}")
             else: await message.reply("Никого из списка доступа в этом чате не найдено.")
         
-        elif "команды" in msg_text:
-            await message.reply(HELP_TEXT)
+        elif "команды" in msg_text: await message.reply(HELP_TEXT)
         
         elif "вероятность" in msg_text:
             question = msg_text.replace("аура вероятность", "").strip()
@@ -284,6 +265,14 @@ async def main_group_handler(message: types.Message):
 
         elif "выбор" in msg_text:
             content = msg_text.replace("аура выбор", "").strip()
+            
+            # УЛУЧШЕННАЯ ПАСХАЛКА (понимает с опечатками)
+            # Ищем корни слов: вилк/глаз + жоп/раз
+            words = content.lower()
+            if ("вилк" in words or "глаз" in words) and ("жоп" in words or "раз" in words):
+                await message.reply(random.choice(["Иди нахуй", "Иди нахуй с такими вопросами", "Пошел нахуй", "Еблан сука"]))
+                return
+
             if " или " in content:
                 repeated = check_repeat(message.chat.id, content)
                 if repeated: await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
@@ -309,8 +298,7 @@ async def main_group_handler(message: types.Message):
                 res = random.choice(AURA_VALUES)
                 await message.reply(f"💎 Аура <b>{target}</b>: <b>{res}</b>")
         
-        elif "фраз" in msg_text:
-            await message.reply(f"💬 <b>{random.choice(AURA_QUOTES)}</b>")
+        elif "фраз" in msg_text: await message.reply(f"💬 <b>{random.choice(AURA_QUOTES)}</b>")
         
         elif "число" in msg_text:
             try:
@@ -324,18 +312,12 @@ async def main_group_handler(message: types.Message):
                 await message.reply(f"⏳ Таймер на <b>{sec}</b> сек."); await asyncio.sleep(sec)
                 await message.answer(f"🔔 {message.from_user.mention_html()}, время вышло!")
             except: await message.reply("Пиши: <code>Аура таймер 10</code>")
-
-        elif "кости пара" in msg_text:
-            await message.reply(f"🎲 Выпало: <b>{random.randint(1, 6)}</b> и <b>{random.randint(1, 6)}</b>")
-        
-        elif "кости" in msg_text:
-            await message.reply(f"🎲 Число: <b>{random.randint(1, 6)}</b>")
-
+        elif "кости пара" in msg_text: await message.reply(f"🎲 Выпало: <b>{random.randint(1, 6)}</b> и <b>{random.randint(1, 6)}</b>")
+        elif "кости" in msg_text: await message.reply(f"🎲 Число: <b>{random.randint(1, 6)}</b>")
         return
 
     if any(word in msg_text for word in BAD_WORDS):
-        if random.random() < 0.25:
-            await message.reply(random.choice(SHAME_VARIATIONS))
+        if random.random() < 0.25: await message.reply(random.choice(SHAME_VARIATIONS))
 
 @dp.message(is_private_chat, is_allowed_user, F.text.startswith("/msg "))
 async def aura_anon_message(message: types.Message):
