@@ -311,7 +311,7 @@ async def main_group_handler(message: types.Message):
                 sec = int(msg_text.split()[2])
                 await message.reply(f"⏳ Таймер на <b>{sec}</b> сек."); await asyncio.sleep(sec)
                 await message.answer(f"🔔 {message.from_user.mention_html()}, время вышло!")
-            except: await message.reply("Пиши: <code>Аура таймер 10</code>")
+            except: await message.reply("Пиши: <code>Аура таймер [время в сек]</code>")
         elif "кости пара" in msg_text: await message.reply(f"🎲 Выпало: <b>{random.randint(1, 6)}</b> и <b>{random.randint(1, 6)}</b>")
         elif "кости" in msg_text: await message.reply(f"🎲 Число: <b>{random.randint(1, 6)}</b>")
         return
