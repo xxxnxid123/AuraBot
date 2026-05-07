@@ -270,7 +270,7 @@ async def main_group_handler(message: types.Message):
             # Ищем корни слов: вилк/глаз + жоп/раз
             words = content.lower()
             if ("вилк" in words or "глаз" in words) and ("жоп" in words or "раз" in words):
-                await message.reply(random.choice(["Иди нахуй", "Иди нахуй с такими вопросами", "Пошел нахуй", "Еблан сука"]))
+                await message.reply(random.choice(["Иди нахуй", "Иди нахуй с такими вопросами", "Пошел нахуй", "Еблан сука", "Может нахуй сходишь", "Тебя явно не спрашивали блять"]))
                 return
 
             if " или " in content:
