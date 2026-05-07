@@ -10,9 +10,12 @@ from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.utils.link import create_tg_link
 
+# БИБЛИОТЕКИ ДЛЯ ТАБЛИЦ
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
-STATS_FILE = "stats.json"
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
@@ -24,22 +27,54 @@ ALLOWED_USERS = get_ids('ALLOWED_USERS')
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# --- ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛОМ СТАТИСТИКИ ---
+# --- ЛОГИКА GOOGLE ТАБЛИЦ ---
+def get_gsheet():
+    creds_raw = os.environ.get('GOOGLE_SETTINGS')
+    if not creds_raw:
+        print("ОШИБКА: Переменная GOOGLE_SETTINGS не найдена!")
+        return None
+    
+    creds_json = json.loads(creds_raw)
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
+    client = gspread.authorize(creds)
+    return client.open("AuraStats").sheet1
+
 def load_stats():
-    if os.path.exists(STATS_FILE):
-        try:
-            with open(STATS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    try:
+        sheet = get_gsheet()
+        if not sheet: return {}
+        records = sheet.get_all_records()
+        stats = {}
+        for row in records:
+            uid = str(row['user_id'])
+            stats[uid] = {
+                "name": row['name'],
+                "balance": int(row['balance']),
+                "last_farm": float(row['last_farm']),
+                "times": json.loads(row['times']) if row['times'] else []
+            }
+        return stats
+    except Exception as e:
+        print(f"Ошибка загрузки из Таблиц: {e}")
+        return {}
 
 def save_stats(stats_data):
     try:
-        with open(STATS_FILE, "w", encoding="utf-8") as f:
-            json.dump(stats_data, f, ensure_ascii=False, indent=4)
+        sheet = get_gsheet()
+        if not sheet: return
+        rows = [["user_id", "name", "balance", "last_farm", "times"]]
+        for uid, data in stats_data.items():
+            rows.append([
+                uid, 
+                data['name'], 
+                data['balance'], 
+                data['last_farm'], 
+                json.dumps(data['times'])
+            ])
+        sheet.update('A1', rows)
     except Exception as e:
-        print(f"Ошибка сохранения статистики: {e}")
+        print(f"Ошибка сохранения в Таблицы: {e}")
 
 # --- ЛОГИКА СТАТУСОВ ---
 def get_status(balance):
@@ -266,8 +301,6 @@ async def main_group_handler(message: types.Message):
         elif "выбор" in msg_text:
             content = msg_text.replace("аура выбор", "").strip()
             
-            # УЛУЧШЕННАЯ ПАСХАЛКА (понимает с опечатками)
-            # Ищем корни слов: вилк/глаз + жоп/раз
             words = content.lower()
             if ("вилк" in words or "глаз" in words) and ("жоп" in words or "раз" in words):
                 await message.reply(random.choice(["Иди нахуй", "Иди нахуй с такими вопросами", "Пошел нахуй", "Еблан сука", "Может нахуй сходишь", "Тебя явно не спрашивали блять"]))
