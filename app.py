@@ -44,37 +44,55 @@ def load_stats():
     try:
         sheet = get_gsheet()
         if not sheet: return {}
+        
+        # Получаем все данные
         records = sheet.get_all_records()
+        
+        # Если таблица пустая (только шапка), возвращаем пустой словарь
+        if not records:
+            return {}
+            
         stats = {}
         for row in records:
+            # Проверяем, что user_id не пустой
+            if not row.get('user_id'): continue
+            
             uid = str(row['user_id'])
             stats[uid] = {
-                "name": row['name'],
-                "balance": int(row['balance']),
-                "last_farm": float(row['last_farm']),
-                "times": json.loads(row['times']) if row['times'] else []
+                "name": str(row.get('name', 'User')),
+                "balance": int(row.get('balance', 0)),
+                "last_farm": float(row.get('last_farm', 0)),
+                "times": json.loads(row['times']) if row.get('times') else []
             }
         return stats
     except Exception as e:
-        print(f"Ошибка загрузки из Таблиц: {e}")
+        print(f"!!! ОШИБКА ЗАГРУЗКИ: {e}")
         return {}
 
 def save_stats(stats_data):
     try:
         sheet = get_gsheet()
         if not sheet: return
+        
+        # Подготавливаем строки. ВАЖНО: убедись, что в таблице есть эта шапка!
         rows = [["user_id", "name", "balance", "last_farm", "times"]]
+        
         for uid, data in stats_data.items():
             rows.append([
-                uid, 
-                data['name'], 
-                data['balance'], 
-                data['last_farm'], 
+                str(uid), 
+                str(data['name']), 
+                int(data['balance']), 
+                float(data['last_farm']), 
                 json.dumps(data['times'])
             ])
+        
+        # Используем update для записи всех строк разом
+        # Мы очищаем старые данные и пишем новые, чтобы не было дублей
+        sheet.clear()
         sheet.update('A1', rows)
+        print("--- Данные успешно синхронизированы с таблицей ---")
     except Exception as e:
-        print(f"Ошибка сохранения в Таблицы: {e}")
+        print(f"!!! ОШИБКА СОХРАНЕНИЯ: {e}")
 
 # --- ЛОГИКА СТАТУСОВ ---
 def get_status(balance):
