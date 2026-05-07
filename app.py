@@ -45,16 +45,12 @@ def load_stats():
         sheet = get_gsheet()
         if not sheet: return {}
         
-        # Получаем все данные
         records = sheet.get_all_records()
-        
-        # Если таблица пустая (только шапка), возвращаем пустой словарь
         if not records:
             return {}
             
         stats = {}
         for row in records:
-            # Проверяем, что user_id не пустой
             if not row.get('user_id'): continue
             
             uid = str(row['user_id'])
@@ -74,7 +70,6 @@ def save_stats(stats_data):
         sheet = get_gsheet()
         if not sheet: return
         
-        # Подготавливаем строки. ВАЖНО: убедись, что в таблице есть эта шапка!
         rows = [["user_id", "name", "balance", "last_farm", "times"]]
         
         for uid, data in stats_data.items():
@@ -86,8 +81,6 @@ def save_stats(stats_data):
                 json.dumps(data['times'])
             ])
         
-        # Используем update для записи всех строк разом
-        # Мы очищаем старые данные и пишем новые, чтобы не было дублей
         sheet.clear()
         sheet.update('A1', rows)
         print("--- Данные успешно синхронизированы с таблицей ---")
@@ -237,7 +230,6 @@ async def main_group_handler(message: types.Message):
         USER_MESSAGES[uid] = {"name": uname, "times": [], "balance": 0, "last_farm": 0}
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
-    save_stats(USER_MESSAGES)
 
     if msg_text.startswith("аура"):
         if int(uid) not in ALLOWED_USERS: return
@@ -252,7 +244,8 @@ async def main_group_handler(message: types.Message):
                 reward = random.randint(50, 450)
                 u_data["balance"] = u_data.get("balance", 0) + reward
                 u_data["last_farm"] = now
-                save_stats(USER_MESSAGES)
+                # Фоновое сохранение, чтобы не тормозить ответ
+                asyncio.to_thread(save_stats, USER_MESSAGES)
                 status = get_status(u_data["balance"])
                 await message.reply(f"⛏ Ты нафармил <b>{reward}</b> 💎\nТвой баланс: <b>{u_data['balance']}</b>\nТвой статус: <b>{status}</b>")
 
