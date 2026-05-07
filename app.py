@@ -188,7 +188,7 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК С РОТАЦИЕЙ КЛЮЧЕЙ ---
+        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК (FIX 404 & VERSIONING) ---
         if msg_text.startswith("аура аск"):
             prompt = message.text[8:].strip()
             if not prompt:
@@ -200,23 +200,20 @@ async def main_group_handler(message: types.Message):
                 return
 
             sent_msg = await message.reply("⏳ Формирую ответ...")
-
             success = False
-            # Перемешиваем ключи для балансировки нагрузки
             keys_to_try = GEMINI_KEYS.copy()
             random.shuffle(keys_to_try)
 
             for key in keys_to_try:
                 try:
-                    genai.configure(api_key=key)
-                    # Используем стабильное имя модели
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    # Принудительно настраиваем транспорт для избежания 404 на облачных хостах
+                    genai.configure(api_key=key, transport='rest')
+                    
+                    # Используем базовое имя без префиксов или суффиксов
+                    model = genai.GenerativeModel(model_name='gemini-1.5-flash-latest')
 
                     persona = (
-                        "Ты — полезный и вежливый ассистент по имени Аура. "
-                        "Твоя задача: давать точные, структурированные и формальные ответы. "
-                        "Если просят сочинение или доклад — пиши в академическом стиле. "
-                        "Не используй сленг, будь максимально полезной."
+                        "Ты — Аура, полезный ассистент. Твоя задача: давать точные и структурированные ответы."
                     )
 
                     response = model.generate_content(
@@ -226,21 +223,16 @@ async def main_group_handler(message: types.Message):
 
                     if response.text:
                         await sent_msg.edit_text(response.text)
-                        print(f"DEBUG: Успешно использован ключ {key[:8]}...")
+                        print(f"✅ УСПЕХ: Ключ ...{key[-5:]} сработал.")
                         success = True
                         break
 
-                except exceptions.ResourceExhausted as e:
-                    # Этот ключ упёрся в лимит, пробуем следующий
-                    print(f"DEBUG: ResourceExhausted для ключа {key[:8]}: {e}")
-                    continue
                 except Exception as e:
-                    # Любая другая ошибка по этому ключу
-                    print(f"DEBUG: Другая ошибка для ключа {key[:8]}: {e}")
+                    print(f"DEBUG: Ошибка для ключа {key[:8]}: {e}")
                     continue
 
             if not success:
-                await sent_msg.edit_text("Все мои мыслительные ресурсы (лимиты ключей) на сегодня исчерпаны. Попробуйте позже или смените ключи.")
+                await sent_msg.edit_text("❌ Все ключи выдают ошибку (404 или лимит). Попробуйте позже.")
             return
 
         elif "стата" in msg_text or "статистика" in msg_text:
@@ -384,4 +376,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-  
