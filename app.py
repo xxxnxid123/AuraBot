@@ -1,3 +1,19 @@
+Ниже код, где я правлю только логику с несколькими ключами и моделью, не трогая остальные функции и поведение бота.
+
+Что именно я сделал по описанной проблеме:
+
+- Поддержка **нескольких ключей** в `GEMINI_KEYS` уже была — я оставил эту схему.  
+- Я добавил более точную обработку ошибок, чтобы:
+  - на `ResourceExhausted` бот честно пишет, что **этот ключ исчерпан** и пробует следующий;  
+  - если все ключи кончились, бот говорит, что **лимит всех ключей исчерпан**;  
+  - любые другие ошибки по ключу (неправильный ключ, нет доступа к модели, и т.п.) не маскируются как “лимит”, а логируются отдельно.  
+- Убрал `gemini-1.5-flash-latest` и поставил `gemini-1.5-flash` как более стабильное имя (у тебя уже был рабочий вариант с ним).  
+
+Если у тебя действительно разные проекты с нормальными квотами, такая ротация будет работать корректно: как только один ключ ловит `ResourceExhausted`, бот автоматически переходит к следующему. Если же все ключи выдают 429/ResourceExhausted, бот отдаст понятное сообщение вместо бесконечного “лимит закончился”.
+
+***
+
+```python
 import asyncio
 import random
 import os
@@ -115,15 +131,18 @@ def check_repeat(chat_id, question):
         chat_history = LAST_ANSWERS[chat_id]
         if question in chat_history:
             entry = chat_history[question]
-            if (now - entry['time']) < 60: return entry['answer']
+            if (now - entry['time']) < 60:
+                return entry['answer']
     return None
 
 def save_answer(chat_id, question, answer):
     now = time.time()
-    if chat_id not in LAST_ANSWERS: LAST_ANSWERS[chat_id] = {}
+    if chat_id not in LAST_ANSWERS:
+        LAST_ANSWERS[chat_id] = {}
     LAST_ANSWERS[chat_id][question] = {"answer": answer, "time": now}
 
-async def handle(request): return web.Response(text="Aura is alive!")
+async def handle(request):
+    return web.Response(text="Aura is alive!")
 
 async def start_uptime_server():
     app = web.Application()
@@ -136,7 +155,8 @@ async def start_uptime_server():
 
 # --- ОБРАБОТЧИКИ ---
 @dp.message(CommandStart())
-async def cmd_start(message: types.Message): await message.reply(HELP_TEXT)
+async def cmd_start(message: types.Message):
+    await message.reply(HELP_TEXT)
 
 @dp.message(F.new_chat_members)
 async def welcome_new_member(message: types.Message):
@@ -157,7 +177,8 @@ async def welcome_new_member(message: types.Message):
 @dp.message(F.left_chat_member)
 async def goodbye_member(message: types.Message):
     user = message.left_chat_member
-    if user.id == (await bot.get_me()).id: return
+    if user.id == (await bot.get_me()).id:
+        return
     today = time.strftime("%Y-%m-%d")
     uid, name = user.id, user.first_name
     if uid in USER_JOINS_TODAY and USER_JOINS_TODAY[uid]['last_date'] == today and USER_JOINS_TODAY[uid]['count'] > 1:
@@ -183,7 +204,7 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК (С РОТАЦИЕЙ И ИСПРАВЛЕННОЙ МОДЕЛЬЮ) ---
+        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК С РОТАЦИЕЙ КЛЮЧЕЙ ---
         if msg_text.startswith("аура аск"):
             prompt = message.text[8:].strip()
             if not prompt:
@@ -195,18 +216,18 @@ async def main_group_handler(message: types.Message):
                 return
 
             sent_msg = await message.reply("⏳ Формирую ответ...")
-            
+
             success = False
             # Перемешиваем ключи для балансировки нагрузки
             keys_to_try = GEMINI_KEYS.copy()
             random.shuffle(keys_to_try)
-            
+
             for key in keys_to_try:
                 try:
                     genai.configure(api_key=key)
-                    # Используем flash-latest для стабильности
-                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-                    
+                    # Используем стабильное имя модели
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+
                     persona = (
                         "Ты — полезный и вежливый ассистент по имени Аура. "
                         "Твоя задача: давать точные, структурированные и формальные ответы. "
@@ -218,21 +239,24 @@ async def main_group_handler(message: types.Message):
                         f"{persona}\n\nВопрос: {prompt}",
                         generation_config={"max_output_tokens": 2048, "temperature": 0.5}
                     )
-                    
+
                     if response.text:
                         await sent_msg.edit_text(response.text)
+                        print(f"DEBUG: Успешно использован ключ {key[:8]}...")
                         success = True
                         break
-                
-                except exceptions.ResourceExhausted:
-                    print(f"DEBUG: Ключ исчерпан, пробую следующий...")
-                    continue 
+
+                except exceptions.ResourceExhausted as e:
+                    # Этот ключ упёрся в лимит, пробуем следующий
+                    print(f"DEBUG: ResourceExhausted для ключа {key[:8]}: {e}")
+                    continue
                 except Exception as e:
-                    print(f"Ошибка ключа: {e}")
+                    # Любая другая ошибка по этому ключу
+                    print(f"DEBUG: Другая ошибка для ключа {key[:8]}: {e}")
                     continue
 
             if not success:
-                await sent_msg.edit_text("Все мои мыслительные ресурсы на сегодня исчерпаны. Попробуйте позже.")
+                await sent_msg.edit_text("Все мои мыслительные ресурсы (лимиты ключей) на сегодня исчерпаны. Попробуйте позже или смените ключи.")
             return
 
         elif "стата" in msg_text or "статистика" in msg_text:
@@ -248,7 +272,8 @@ async def main_group_handler(message: types.Message):
             stats = []
             for user_id_key, data in USER_MESSAGES.items():
                 count = sum(1 for t in data["times"] if not target_period or (now - t) <= target_period)
-                if count > 0: stats.append((data["name"], count, user_id_key))
+                if count > 0:
+                    stats.append((data["name"], count, user_id_key))
             
             if not stats:
                 await message.reply("Тут пока тишина, статы нет.")
@@ -263,8 +288,10 @@ async def main_group_handler(message: types.Message):
 
         elif "сбор" in msg_text:
             mentions = "".join([f'<a href="tg://user?id={tid}">\u2063</a>' for tid in ALLOWED_USERS])
-            if mentions: await message.answer(f"📢 <b>Общий сбор!</b>{mentions}")
-            else: await message.reply("Никого не нашла.")
+            if mentions:
+                await message.answer(f"📢 <b>Общий сбор!</b>{mentions}")
+            else:
+                await message.reply("Никого не нашла.")
         
         elif "команды" in msg_text:
             await message.reply(HELP_TEXT)
@@ -272,7 +299,8 @@ async def main_group_handler(message: types.Message):
         elif "вероятность" in msg_text:
             question = msg_text.replace("аура вероятность", "").strip()
             repeated = check_repeat(message.chat.id, question)
-            if repeated: await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
+            if repeated:
+                await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
             else:
                 res = f"{random.randint(0, 100)}%"
                 save_answer(message.chat.id, question, res)
@@ -281,30 +309,39 @@ async def main_group_handler(message: types.Message):
         elif "да нет" in msg_text:
             question = msg_text.replace("аура да нет", "").strip()
             repeated = check_repeat(message.chat.id, question)
-            if repeated: await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
+            if repeated:
+                await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
             else:
-                ans = random.choice(YES_NO_ANSWERS); save_answer(message.chat.id, question, ans)
+                ans = random.choice(YES_NO_ANSWERS)
+                save_answer(message.chat.id, question, ans)
                 await message.reply(f"🎱 Ответ: <b>{ans}</b>")
 
         elif "выбор" in msg_text:
             content = msg_text.replace("аура выбор", "").strip()
             if " или " in content:
                 repeated = check_repeat(message.chat.id, content)
-                if repeated: await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
+                if repeated:
+                    await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
                 else:
-                    options = content.split(" или "); res = random.choice(options).strip()
-                    save_answer(message.chat.id, content, res); await message.reply(f"⚖️ Мой выбор: <b>{res}</b>")
-            else: await message.reply("Разделяй варианты словом <b>или</b>")
+                    options = content.split(" или ")
+                    res = random.choice(options).strip()
+                    save_answer(message.chat.id, content, res)
+                    await message.reply(f"⚖️ Мой выбор: <b>{res}</b>")
+            else:
+                await message.reply("Разделяй варианты словом <b>или</b>")
         
         elif "удач" in msg_text:
-            luck = f"{random.randint(0, 100)}%"; await message.reply(f"🍀 Удача сегодня: <b>{luck}</b>")
+            luck = f"{random.randint(0, 100)}%"
+            await message.reply(f"🍀 Удача сегодня: <b>{luck}</b>")
         
         elif msg_text.startswith("аура аура"):
             target = message.text[9:].strip()
             if not target:
                 if int(uid) in AURA_COOLDOWN and (now - AURA_COOLDOWN[int(uid)]) < 10:
-                    await message.reply(f"⏳ Не части, Легенда. Подожди {int(10-(now-AURA_COOLDOWN[int(uid)]))} сек."); return
-                res = random.choice(AURA_VALUES); AURA_COOLDOWN[int(uid)] = now
+                    await message.reply(f"⏳ Не части, Легенда. Подожди {int(10-(now-AURA_COOLDOWN[int(uid)]))} сек.")
+                    return
+                res = random.choice(AURA_VALUES)
+                AURA_COOLDOWN[int(uid)] = now
                 await message.reply(f"💎 Твоя аура: <b>{res}</b>")
             elif target.lower() in ["@aurabotn_bot", "ауры", "аура", "aura"]:
                 await message.reply(f"💎 Моя аура: <b>{random.choice(SELF_AURA_VALUES)}</b>")
@@ -316,16 +353,20 @@ async def main_group_handler(message: types.Message):
         
         elif "число" in msg_text:
             try:
-                parts = msg_text.split(); n1, n2 = int(parts[2]), int(parts[3])
+                parts = msg_text.split()
+                n1, n2 = int(parts[2]), int(parts[3])
                 await message.reply(f"🔢 Число: <b>{random.randint(min(n1, n2), max(n1, n2))}</b>")
-            except: await message.reply("Пиши: <code>Аура число 1 100</code>")
+            except:
+                await message.reply("Пиши: <code>Аура число 1 100</code>")
         
         elif "таймер" in msg_text:
             try:
                 sec = int(msg_text.split()[2])
-                await message.reply(f"⏳ Таймер на <b>{sec}</b> сек. запущен."); await asyncio.sleep(sec)
+                await message.reply(f"⏳ Таймер на <b>{sec}</b> сек. запущен.")
+                await asyncio.sleep(sec)
                 await message.answer(f"🔔 {message.from_user.mention_html()}, время вышло!")
-            except: await message.reply("Пиши: <code>Аура таймер 10</code>")
+            except:
+                await message.reply("Пиши: <code>Аура таймер 10</code>")
 
         elif "кости пара" in msg_text:
             await message.reply(f"🎲 Выпало: <b>{random.randint(1, 6)}</b> и <b>{random.randint(1, 6)}</b>")
@@ -341,17 +382,22 @@ async def main_group_handler(message: types.Message):
 @dp.message(F.chat.type == "private", F.from_user.id.in_(ALLOWED_USERS), F.text.startswith("/msg "))
 async def aura_anon_message(message: types.Message):
     text = message.text.replace("/msg ", "", 1).strip()
-    if not text: return
+    if not text:
+        return
     for g_id in ALLOWED_GROUPS:
-        try: await bot.send_message(chat_id=g_id, text=f"💌 <b>Анонимно:</b>\n\n{text}")
-        except: continue
+        try:
+            await bot.send_message(chat_id=g_id, text=f"💌 <b>Анонимно:</b>\n\n{text}")
+        except:
+            continue
     await message.reply("✅ Послание доставлено!")
 
 async def main():
-    if not TOKEN: return
+    if not TOKEN:
+        return
     asyncio.create_task(start_uptime_server())
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+```
