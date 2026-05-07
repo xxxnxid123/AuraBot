@@ -9,13 +9,9 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.utils.link import create_tg_link
-import google.generativeai as genai
-from google.api_core import exceptions
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
-# Поддержка нескольких ключей через запятую
-GEMINI_KEYS = [k.strip() for k in os.environ.get('GEMINI_KEY', "").split(",") if k.strip()]
 STATS_FILE = "stats.json"
 
 def get_ids(env_name):
@@ -97,15 +93,14 @@ HELP_TEXT = (
     "🎱 <code>Аура да нет [вопрос]</code>\n"
     "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
     "📊 <code>Аура стата [час/сутки/неделя/месяц]</code>\n"
-    "🤖 <code>Аура аск [вопрос]</code> - спросить мой разум\n"
     "💬 <code>Аура фраза</code> - выдать базу\n"
     "🍀 <code>Аура удача</code>\n"
     "🎲 <code>Аура кости</code>\n"
     "⏳ <code>Аура таймер [сек]</code>\n"
     "💎 <code>Аура аура [текст]</code> - узнать ауру\n"
     "📢 <code>Аура сбор</code> - общий сбор\n"
-    "✉️ <code>/msg [текст]</code> - (в лс боту) анонимка в чат\n"
-    "📜 <code>Аура команды</code> - меню"
+    "📜 <code>Аура команды</code> - меню\n"
+    "✉️ <code>/msg [текст]</code> - (в лс боту) анонимка в чат"
 )
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
@@ -188,54 +183,7 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        # --- ОБНОВЛЕННАЯ КОМАНДА: АУРА АСК (FIX 404 & VERSIONING) ---
-        if msg_text.startswith("аура аск"):
-            prompt = message.text[8:].strip()
-            if not prompt:
-                await message.reply("Напишите вопрос. Пример: <code>Аура аск что такое фотосинтез?</code>")
-                return
-            
-            if not GEMINI_KEYS:
-                await message.reply("Ключи ИИ не найдены.")
-                return
-
-            sent_msg = await message.reply("⏳ Формирую ответ...")
-            success = False
-            keys_to_try = GEMINI_KEYS.copy()
-            random.shuffle(keys_to_try)
-
-            for key in keys_to_try:
-                try:
-                    # Принудительно настраиваем транспорт для избежания 404 на облачных хостах
-                    genai.configure(api_key=key, transport='rest')
-                    
-                    # Используем базовое имя без префиксов или суффиксов
-                    model = genai.GenerativeModel(model_name='gemini-1.5-flash-latest')
-
-                    persona = (
-                        "Ты — Аура, полезный ассистент. Твоя задача: давать точные и структурированные ответы."
-                    )
-
-                    response = model.generate_content(
-                        f"{persona}\n\nВопрос: {prompt}",
-                        generation_config={"max_output_tokens": 2048, "temperature": 0.5}
-                    )
-
-                    if response.text:
-                        await sent_msg.edit_text(response.text)
-                        print(f"✅ УСПЕХ: Ключ ...{key[-5:]} сработал.")
-                        success = True
-                        break
-
-                except Exception as e:
-                    print(f"DEBUG: Ошибка для ключа {key[:8]}: {e}")
-                    continue
-
-            if not success:
-                await sent_msg.edit_text("❌ Все ключи выдают ошибку (404 или лимит). Попробуйте позже.")
-            return
-
-        elif "стата" in msg_text or "статистика" in msg_text:
+        if "стата" in msg_text or "статистика" in msg_text:
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
             target_period = None
             period_name = "все время"
