@@ -8,9 +8,9 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ForceReply
+from aiogram.utils.link import create_tg_link
 
-# --- КОНФИГУРАЦИЯ ---
+# --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
 STATS_FILE = "stats.json"
 
@@ -24,7 +24,7 @@ ALLOWED_USERS = get_ids('ALLOWED_USERS')
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# --- РАБОТА С БАЗОЙ ДАННЫХ ---
+# --- ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛОМ СТАТИСТИКИ ---
 def load_stats():
     if os.path.exists(STATS_FILE):
         try:
@@ -39,278 +39,287 @@ def save_stats(stats_data):
         with open(STATS_FILE, "w", encoding="utf-8") as f:
             json.dump(stats_data, f, ensure_ascii=False, indent=4)
     except Exception as e:
-        print(f"Ошибка сохранения: {e}")
+        print(f"Ошибка сохранения статистики: {e}")
 
-USER_MESSAGES = load_stats()
+# --- ПАМЯТЬ БОТА ---
+LAST_ANSWERS = {}
+AURA_COOLDOWN = {}
+USER_JOINS_TODAY = {} 
+USER_MESSAGES = load_stats() # Загружаем сохраненную статику при старте
 
-# --- ТЕКСТОВЫЕ ДАННЫЕ ---
-AURA_QUOTES = [
-    "Конечно", "А как иначе", "Черт возьми", "Делаем", "На колени", 
-    "Возможно", "Это победа", "Легенда", "Внатуре", "Это реально круто", 
-    "Естественно", "Потихоньку", "Дай Бог", "Я это запомню", "Мед по телу"
+AURA_QUOTES = ["Конечно", "А как иначе", "Черт возьми", "А когда не делали", "Делаем", "На колени", "Возможно", "Это победа", "Легенда", "Внатуре", "Это реально круто", "Естественно", "Че они там курят", "Потихоньку", "Дай Бог", "Я это запомню", "Я это не запомню", "Я не мафия", "Я мафия", "Я тебе доверяю", "Вам че денег дать", "Че она несет", "Мед по телу"]
+YES_NO_ANSWERS = ["Я думаю, что ДА", "Скорее всего, ДА", "Конечно, ДА", "Однозначно ДА", "Я думаю, что НЕТ", "Скорее всего, НЕТ", "Точно НЕТ", "Вообще без вариантов, НЕТ", "Спроси позже, я в раздумьях", "Мои сенсоры говорят - ДА", "Звезды нашептали - НЕТ"]
+REPEAT_PHRASES = ["Я повторяюсь... Ответ: ", "Склероз? Я уже говорила: ", "Я же только что отвечала: ", "Мое мнение не изменилось: ", "У тебя дежавю? Ответ тот же: ", "Слушай внимательно, ответ: "]
+AURA_VALUES = [
+    67, 34, 69, 89, 322, 42, 52, 82, 1488, 228, 
+    "пульсирует синим", "позорище, у тебя нет ауры", "пронырливая", "скудная", "невероятная", "бесконечная",
+    "получил(а) много ауры незаконным путем", "грязная", "чистая", "выронил ауру", "украл чужую ауру", 
+    "пожертвовал свою ауру нуждающимся", "взял микрозайм на ауру", "отбывает срок за кражу ауры"
 ]
 
-YES_NO_ANSWERS = [
-    "Я думаю, что ДА", "Скорее всего, ДА", "Конечно, ДА", "Однозначно ДА", 
-    "Я думаю, что НЕТ", "Скорее всего, НЕТ", "Точно НЕТ", "Спроси позже", 
-    "Мои сенсоры говорят - ДА", "Звезды нашептали - НЕТ"
+SELF_AURA_VALUES = [
+    "Абсолютная", 
+    "Ослепительная. Не смотри на меня", 
+    "Бесконечная конечно", 
+    "Выиграла вашу ауру в казино", 
+    "Живу на проценты с вашей ауры", 
+    "Отмыла всю грязную ауру", 
+    "Пожертвовала ауру нуждающимся"
 ]
+
+WELCOME_VARIATIONS = [
+    "Привет, {name}! Я Аура. Добро пожаловать в чат. Если вы тут впервые, учтите, что команды будут доступны после включения вас в белый список. Меню: <b>Аура команды</b>.",
+    "Рада знакомству, {name}! Я Аура. Добро пожаловать. Если вы тут впервые, команды станут доступны, как только вас внесут в список доступа. Список команд: <b>Аура команды</b>.",
+    "Приветствуем, {name}! Я - бот Аура. Если ты здесь впервые, располагайся! Команды заработают после получения доступа. Меню: <b>Аура команды</b>."
+]
+REJOIN_VARIATIONS = ["Привет, {name}! Рады тебя снова видеть.", "О, {name}, ты вернулся! С возвращением.", "{name}, снова привет! Без тебя было скучно.", "С возвращением, {name}! Мы уже и не надеялись."]
+LEAVE_VARIATIONS = ["Удачи, {name}!", "{name} покинул(а) чат. Увидимся.", "До встречи, {name}.", "Минус один. Счастливо, {name}!"]
+LEAVE_REPEAT_VARIATIONS = ["Опять ушел? Ну, до связи, {name}.", "Снова покидаешь нас, {name}? Ладно, пока.", "Ну вот, опять ушел. Бывай, {name}."]
 
 BAD_WORDS = ["хуй", "пизд", "ебла", "сук", "бля", "гандон", "даун", "шлюх", "уеб", "чмо"]
-
 SHAME_VARIATIONS = [
-    "С такими выражениями твоя аура начнет сыпаться уже в 35 лет", 
-    "Из-за этих слов твоя аура только что потемнела", 
-    "Маты загрязняют твою ауру"
+    "Ай-ай-ай, какой плохой человек... Как так можно, материться?",
+    "Фу, как некультурно. Твоя аура только что потемнела.",
+    "Слышу мат - вижу неуверенность. Успокойся, легенда. Нам еще нужна твоя чистая аура",
+    "Ой, кто это у нас тут такой смелый матерится? Кринжа навалил, конечно.",
+    "Твои слова пахнут плохо. Давай без этого в моем присутствии."
 ]
 
+# --- ФИЛЬТРЫ ---
+is_allowed_user = F.from_user.id.in_(ALLOWED_USERS)
+is_allowed_group = F.chat.id.in_(ALLOWED_GROUPS)
+is_private_chat = F.chat.type == "private"
+
 HELP_TEXT = (
-    "✨ <b>Я Аура!</b> ✨\n\n"
-    "<b>💎 ЭКОНОМИКА:</b>\n"
-    "⛏ <code>Аура фарм</code> — раз в 3 часа\n"
-    "💰 <code>Аура баланс</code> — твой кошелек\n"
-    "🛒 <code>Аура магазин</code> — меню и переводы\n\n"
-    "<b>🔮 КОМАНДЫ:</b>\n"
-    "🔮 Вероятность | 🎱 Да/Нет | ⚖️ Выбор\n"
-    "📊 Стата | 💬 Фраза | 🍀 Удача\n"
-    "🎲 Кости | ⏳ Таймер | 📢 Сбор"
+    "✨ <b>Я Аура - ваш легендарный бот!</b> ✨\n\n"
+    "<b>Доступные команды:</b>\n"
+    "🔮 <code>Аура вероятность [текст]</code>\n"
+    "🎱 <code>Аура да нет [вопрос]</code>\n"
+    "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
+    "📊 <code>Аура стата [час/сутки/неделя/месяц]</code>\n"
+    "💬 <code>Аура фраза</code> - выдать базу\n"
+    "🍀 <code>Аура удача</code>\n"
+    "🎲 <code>Аура кости</code>\n"
+    "🎲 <code>Аура кости пара</code>\n"
+    "🔢 <code>Аура число [от] [до]</code>\n"
+    "⏳ <code>Аура таймер [сек]</code>\n"
+    "💎 <code>Аура аура [текст]</code> - узнать свою ауру или чью-то\n"
+    "📢 <code>Аура сбор</code> - общий сбор, тегнуть пользователей чата\n"
+    "📜 <code>Аура команды</code> - показать это меню\n\n"
+    "📩 <b>Личные сообщения:</b>\n"
+    "🔐 <code>/msg [текст]</code> - отправить анонимку в чат (писать боту в ЛС)"
 )
 
-# --- КЛАВИАТУРЫ ---
-def get_main_kb():
-    keyboard = [
-        [InlineKeyboardButton(text="⛏ Фарм (Раз в 3ч)", callback_data="farm_aura")],
-        [InlineKeyboardButton(text="🛒 Магазин", callback_data="open_shop")],
-        [InlineKeyboardButton(text="💎 Баланс", callback_data="check_balance")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-def get_shop_kb():
-    keyboard = [
-        [InlineKeyboardButton(text="🎖 Админка (5000💎)", callback_data="buy_admin")],
-        [InlineKeyboardButton(text="🏷 Сменить тег (500💎)", callback_data="buy_tag")],
-        [InlineKeyboardButton(text="💸 Перевести 💎", callback_data="transfer_start")],
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_main")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-# --- ОБРАБОТКА КНОПОК (CALLBACKS) ---
-@dp.callback_query(F.data == "farm_aura")
-async def cb_farm(callback: CallbackQuery):
-    uid = str(callback.from_user.id)
-    if int(uid) not in ALLOWED_USERS:
-        await callback.answer("Нет доступа", show_alert=True)
-        return
-
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+def check_repeat(chat_id, question):
     now = time.time()
-    user_data = USER_MESSAGES.get(uid, {"balance": 0, "last_farm": 0})
-    wait_seconds = 10800 # 3 часа
+    if chat_id in LAST_ANSWERS:
+        chat_history = LAST_ANSWERS[chat_id]
+        if question in chat_history:
+            entry = chat_history[question]
+            if (now - entry['time']) < 60: return entry['answer']
+    return None
 
-    if now - user_data.get("last_farm", 0) < wait_seconds:
-        remaining = int((wait_seconds - (now - user_data["last_farm"])) // 60)
-        await callback.answer(f"⏳ Жди {remaining // 60}ч {remaining % 60}мин", show_alert=True)
-        return
-
-    reward = random.randint(50, 400)
-    USER_MESSAGES[uid]["balance"] = user_data.get("balance", 0) + reward
-    USER_MESSAGES[uid]["last_farm"] = now
-    save_stats(USER_MESSAGES)
-
-    await callback.message.answer(f"⛏ +{reward} 💎! Баланс: {USER_MESSAGES[uid]['balance']}")
-    await callback.answer()
-
-@dp.callback_query(F.data == "check_balance")
-async def cb_bal(callback: CallbackQuery):
-    uid = str(callback.from_user.id)
-    is_owner = int(uid) == ALLOWED_USERS[0]
-    balance = "∞" if is_owner else USER_MESSAGES.get(uid, {}).get("balance", 0)
-    await callback.answer(f"Твой баланс: {balance} 💎", show_alert=True)
-
-@dp.callback_query(F.data == "open_shop")
-async def cb_shop(callback: CallbackQuery):
-    await callback.message.edit_text("🛒 <b>Магазин Ауры</b>", reply_markup=get_shop_kb())
-
-@dp.callback_query(F.data == "back_to_main")
-async def cb_back(callback: CallbackQuery):
-    await callback.message.edit_text(HELP_TEXT, reply_markup=get_main_kb())
-
-@dp.callback_query(F.data == "buy_admin")
-async def cb_buy_admin(callback: CallbackQuery):
-    await callback.message.answer("📝 Введи текст для админки (ответь на это сообщение):", reply_markup=ForceReply(selective=True))
-    await callback.answer()
-
-@dp.callback_query(F.data == "buy_tag")
-async def cb_buy_tag(callback: CallbackQuery):
-    await callback.message.answer("🏷 Введи новый тег (ответь на это сообщение):", reply_markup=ForceReply(selective=True))
-    await callback.answer()
-
-@dp.callback_query(F.data == "transfer_start")
-async def cb_transfer(callback: CallbackQuery):
-    await callback.message.answer("💸 <b>Перевод Ауры:</b>\nОтветь на сообщение того, кому хочешь перевести, и напиши сумму цифрами.", reply_markup=ForceReply(selective=True))
-    await callback.answer()
-
-# --- ОСНОВНОЙ ОБРАБОТЧИК СООБЩЕНИЙ ---
-@dp.message(F.chat.id.in_(ALLOWED_GROUPS), F.text)
-async def main_handler(message: types.Message):
-    text_lower = message.text.lower()
-    uid = str(message.from_user.id)
+def save_answer(chat_id, question, answer):
     now = time.time()
-    is_owner = int(uid) == ALLOWED_USERS[0]
+    if chat_id not in LAST_ANSWERS: LAST_ANSWERS[chat_id] = {}
+    LAST_ANSWERS[chat_id][question] = {"answer": answer, "time": now}
 
-    # Инициализация пользователя
-    if uid not in USER_MESSAGES:
-        USER_MESSAGES[uid] = {"name": message.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
-    
-    USER_MESSAGES[uid]["times"].append(now)
-    USER_MESSAGES[uid]["name"] = message.from_user.first_name
-    save_stats(USER_MESSAGES)
+async def handle(request): return web.Response(text="Aura is alive!")
 
-    # 1. ОБРАБОТКА ОТВЕТОВ (ПОКУПКИ И ПЕРЕВОДЫ)
-    if message.reply_to_message:
-        reply_user = message.reply_to_message.from_user
-        reply_text = message.reply_to_message.text
-        input_val = message.text.strip()
-
-        # Если отвечаем боту (Покупка в магазине)
-        if reply_user.id == (await bot.get_me()).id:
-            if "текст для админки" in reply_text or "новый тег" in reply_text:
-                price = 5000 if "админки" in reply_text else 500
-                
-                if not is_owner and USER_MESSAGES[uid]["balance"] < price:
-                    await message.reply("❌ Недостаточно 💎"); return
-
-                try:
-                    if "админки" in reply_text:
-                        await bot.promote_chat_member(message.chat.id, int(uid), can_manage_chat=True)
-                    
-                    await bot.set_chat_administrator_custom_title(message.chat.id, int(uid), input_val)
-                    
-                    if not is_owner:
-                        USER_MESSAGES[uid]["balance"] -= price
-                    
-                    save_stats(USER_MESSAGES)
-                    await message.reply(f"✅ Готово! Твой тег: <b>{input_val}</b>")
-                except:
-                    await message.reply("❌ Ошибка прав. Бот должен быть админом.")
-                return
-
-        # Если отвечаем пользователю (Перевод денег)
-        elif input_val.isdigit() and not reply_user.is_bot:
-            amount = int(input_val)
-            target_id = str(reply_user.id)
-
-            if amount <= 0: return
-            if target_id == uid:
-                await message.reply("Нельзя переводить самому себе!"); return
-            
-            if not is_owner and USER_MESSAGES[uid]["balance"] < amount:
-                await message.reply("❌ У тебя нет столько 💎"); return
-
-            # Авто-регистрация получателя
-            if target_id not in USER_MESSAGES:
-                USER_MESSAGES[target_id] = {"name": reply_user.first_name, "times": [], "balance": 0, "last_farm": 0}
-
-            if not is_owner:
-                USER_MESSAGES[uid]["balance"] -= amount
-            
-            USER_MESSAGES[target_id]["balance"] += amount
-            save_stats(USER_MESSAGES)
-            await message.reply(f"💸 Перевод выполнен!\n<b>{amount}</b> 💎 отправлено {USER_MESSAGES[target_id]['name']}.")
-            return
-
-    # 2. КОМАНДЫ НАЧИНАЮЩИЕСЯ С "АУРА"
-    if text_lower.startswith("аура"):
-        if int(uid) not in ALLOWED_USERS: return
-
-        if text_lower == "аура фарм":
-            u_data = USER_MESSAGES[uid]
-            if now - u_data["last_farm"] < 10800:
-                rem = int((10800 - (now - u_data["last_farm"])) // 60)
-                await message.reply(f"⏳ Жди {rem // 60}ч {rem % 60}м")
-            else:
-                rew = random.randint(50, 400)
-                u_data["balance"] += rew
-                u_data["last_farm"] = now
-                save_stats(USER_MESSAGES)
-                await message.reply(f"⛏ +{rew} 💎! Баланс: {u_data['balance']}")
-
-        elif text_lower == "аура баланс":
-            bal = "∞" if is_owner else USER_MESSAGES[uid].get("balance", 0)
-            await message.reply(f"💎 Баланс: <b>{bal}</b>")
-
-        elif text_lower == "аура магазин":
-            await message.reply("🛒 <b>Магазин Ауры</b>", reply_markup=get_shop_kb())
-
-        elif "стата" in text_lower:
-            stats_list = sorted(
-                [(d["name"], sum(1 for t in d["times"] if (now-t) <= 86400)) for d in USER_MESSAGES.values()],
-                key=lambda x: x[1], reverse=True
-            )
-            top_text = "📊 <b>Топ за сутки:</b>\n" + "\n".join([f"{i}. {n} — {c}" for i, (n, c) in enumerate(stats_list[:10], 1)])
-            await message.answer(top_text)
-
-        elif "команды" in text_lower:
-            await message.reply(HELP_TEXT, reply_markup=get_main_kb())
-
-        elif "вероятность" in text_lower:
-            await message.reply(f"🔮 Вероятность: <b>{random.randint(0, 100)}%</b>")
-
-        elif "да нет" in text_lower:
-            await message.reply(f"🎱 Ответ: <b>{random.choice(YES_NO_ANSWERS)}</b>")
-
-        elif "выбор" in text_lower:
-            options = text_lower.replace("аура выбор", "").split(" или ")
-            if len(options) > 1:
-                await message.reply(f"⚖️ Выбор: <b>{random.choice(options).strip()}</b>")
-
-        elif "удач" in text_lower:
-            await message.reply(f"🍀 Удача: <b>{random.randint(0, 100)}%</b>")
-
-        elif "фраз" in text_lower:
-            await message.reply(f"💬 <b>{random.choice(AURA_QUOTES)}</b>")
-
-        elif "кости" in text_lower:
-            await message.reply(f"🎲 Кости: <b>{random.randint(1, 6)}</b>")
-
-        elif "сбор" in text_lower:
-            mentions = "".join([f'<a href="tg://user?id={tid}">\u2063</a>' for tid in ALLOWED_USERS])
-            await message.answer(f"📢 <b>Общий сбор!</b>{mentions}")
-
-        elif "таймер" in text_lower:
-            try:
-                seconds = int(text_lower.split()[2])
-                await message.reply(f"⏳ Таймер на {seconds}с.")
-                await asyncio.sleep(seconds)
-                await message.answer(f"🔔 {message.from_user.first_name}, время вышло!")
-            except: pass
-
-    # 3. ФИЛЬТР МАТОВ
-    if any(word in text_lower for word in BAD_WORDS):
-        if random.random() < 0.2:
-            await message.reply(random.choice(SHAME_VARIATIONS))
-
-# --- ЗАПУСК WEB-СЕРВЕРА И БОТА ---
-async def handle(request):
-    return web.Response(text="Aura is running!")
-
-async def main():
-    # Настройка Web-сервера для Render (чтобы не падал деплой)
+async def start_uptime_server():
     app = web.Application()
     app.router.add_get('/', handle)
-    
-    # Запуск сервера в отдельной задаче
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get("PORT", 8080)))
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    
-    # Запуск Telegram бота
-    print("Бот запущен...")
+
+# --- ОБРАБОТЧИКИ ---
+@dp.message(CommandStart())
+async def cmd_start(message: types.Message): await message.reply(HELP_TEXT)
+
+@dp.message(F.new_chat_members)
+async def welcome_new_member(message: types.Message):
+    today = time.strftime("%Y-%m-%d")
+    for user in message.new_chat_members:
+        if user.id == (await bot.get_me()).id:
+            await message.answer(f"Привет всем! {HELP_TEXT}")
+            continue
+        uid, name = user.id, user.first_name
+        if uid in USER_JOINS_TODAY and USER_JOINS_TODAY[uid]['last_date'] == today:
+            USER_JOINS_TODAY[uid]['count'] += 1
+            text = random.choice(REJOIN_VARIATIONS).format(name=name)
+        else:
+            USER_JOINS_TODAY[uid] = {'count': 1, 'last_date': today}
+            text = random.choice(WELCOME_VARIATIONS).format(name=name)
+        await message.answer(text)
+
+@dp.message(F.left_chat_member)
+async def goodbye_member(message: types.Message):
+    user = message.left_chat_member
+    if user.id == (await bot.get_me()).id: return
+    today = time.strftime("%Y-%m-%d")
+    uid, name = user.id, user.first_name
+    if uid in USER_JOINS_TODAY and USER_JOINS_TODAY[uid]['last_date'] == today and USER_JOINS_TODAY[uid]['count'] > 1:
+        text = random.choice(LEAVE_REPEAT_VARIATIONS).format(name=name)
+    else:
+        text = random.choice(LEAVE_VARIATIONS).format(name=name)
+    await message.answer(text)
+
+# ГЛАВНЫЙ ОБРАБОТЧИК (Команды + Мат + Статистика)
+@dp.message(is_allowed_group, F.text)
+async def main_group_handler(message: types.Message):
+    msg_text = message.text.lower()
+    uid = str(message.from_user.id) # JSON ключи — строки
+    uname = message.from_user.first_name
+    now = time.time()
+
+    # Сбор статистики сообщений
+    if uid not in USER_MESSAGES:
+        USER_MESSAGES[uid] = {"name": uname, "times": []}
+    USER_MESSAGES[uid]["times"].append(now)
+    USER_MESSAGES[uid]["name"] = uname
+    save_stats(USER_MESSAGES)
+
+    if msg_text.startswith("аура"):
+        if int(uid) not in ALLOWED_USERS:
+            return
+
+        if "стата" in msg_text or "статистика" in msg_text:
+            periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
+            target_period = None
+            period_name = "все время"
+            
+            for p_key, p_val in periods.items():
+                if p_key in msg_text:
+                    target_period = p_val
+                    period_name = p_key
+                    break
+            
+            stats = []
+            for user_id_key, data in USER_MESSAGES.items():
+                if target_period:
+                    count = sum(1 for t in data["times"] if (now - t) <= target_period)
+                else:
+                    count = len(data["times"])
+                if count > 0:
+                    # Сохраняем ID для создания кликабельной ссылки
+                    stats.append((data["name"], count, user_id_key))
+            
+            if not stats:
+                await message.reply("Статистика пуста.")
+                return
+
+            stats.sort(key=lambda x: x[1], reverse=True)
+            report = f"📊 <b>Статистика ({period_name}):</b>\n"
+            for i, (name, cnt, u_id) in enumerate(stats[:10], 1):
+                # Создаем кликабельное имя через HTML упоминание
+                link = f'<a href="tg://user?id={u_id}">{name}</a>'
+                report += f"{i}. {link} — <b>{cnt}</b>\n"
+            await message.answer(report)
+
+        elif "сбор" in msg_text:
+            mentions = ""
+            for target_id in ALLOWED_USERS:
+                try:
+                    member = await message.bot.get_chat_member(message.chat.id, target_id)
+                    if member.status not in ["left", "kicked"]:
+                        mentions += f'<a href="tg://user?id={target_id}">\u2063</a>'
+                except: continue
+            if mentions: await message.answer(f"📢 <b>Общий сбор!</b>{mentions}")
+            else: await message.reply("Никого из списка доступа в этом чате не найдено.")
+        
+        elif "команды" in msg_text:
+            await message.reply(HELP_TEXT)
+        
+        elif "вероятность" in msg_text:
+            question = msg_text.replace("аура вероятность", "").strip()
+            repeated = check_repeat(message.chat.id, question)
+            if repeated: await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
+            else:
+                res = f"{random.randint(0, 100)}%"
+                save_answer(message.chat.id, question, res)
+                await message.reply(f"🔮 Вероятность: <b>{res}</b>")
+        
+        elif "да нет" in msg_text:
+            question = msg_text.replace("аура да нет", "").strip()
+            repeated = check_repeat(message.chat.id, question)
+            if repeated: await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
+            else:
+                ans = random.choice(YES_NO_ANSWERS); save_answer(message.chat.id, question, ans)
+                await message.reply(f"🎱 Ответ: <b>{ans}</b>")
+
+        elif "выбор" in msg_text:
+            content = msg_text.replace("аура выбор", "").strip()
+            if " или " in content:
+                repeated = check_repeat(message.chat.id, content)
+                if repeated: await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
+                else:
+                    options = content.split(" или "); res = random.choice(options).strip()
+                    save_answer(message.chat.id, content, res); await message.reply(f"⚖️ Мой выбор: <b>{res}</b>")
+            else: await message.reply("Разделяй варианты словом <b>или</b>")
+        
+        elif "удач" in msg_text:
+            luck = f"{random.randint(0, 100)}%"; await message.reply(f"🍀 Удача сегодня: <b>{luck}</b>")
+        
+        elif msg_text.startswith("аура аура"):
+            target = message.text[9:].strip()
+            if not target:
+                if int(uid) in AURA_COOLDOWN and (now - AURA_COOLDOWN[int(uid)]) < 10:
+                    await message.reply(f"⏳ Подожди {int(10-(now-AURA_COOLDOWN[int(uid)]))} сек."); return
+                res = random.choice(AURA_VALUES); AURA_COOLDOWN[int(uid)] = now
+                await message.reply(f"💎 Твоя аура: <b>{res}</b>")
+            elif target.lower() in ["@aurabotn_bot", "ауры", "аура", "aura"]:
+                res = random.choice(SELF_AURA_VALUES)
+                await message.reply(f"💎 Моя аура: <b>{res}</b>")
+            else:
+                res = random.choice(AURA_VALUES)
+                await message.reply(f"💎 Аура <b>{target}</b>: <b>{res}</b>")
+        
+        elif "фраз" in msg_text:
+            await message.reply(f"💬 <b>{random.choice(AURA_QUOTES)}</b>")
+        
+        elif "число" in msg_text:
+            try:
+                parts = msg_text.split(); n1, n2 = int(parts[2]), int(parts[3])
+                await message.reply(f"🔢 Число: <b>{random.randint(min(n1, n2), max(n1, n2))}</b>")
+            except: await message.reply("Пиши: <code>Аура число 1 100</code>")
+        
+        elif "таймер" in msg_text:
+            try:
+                sec = int(msg_text.split()[2])
+                await message.reply(f"⏳ Таймер на <b>{sec}</b> сек."); await asyncio.sleep(sec)
+                await message.answer(f"🔔 {message.from_user.mention_html()}, время вышло!")
+            except: await message.reply("Пиши: <code>Аура таймер 10</code>")
+
+        elif "кости пара" in msg_text:
+            await message.reply(f"🎲 Выпало: <b>{random.randint(1, 6)}</b> и <b>{random.randint(1, 6)}</b>")
+        
+        elif "кости" in msg_text:
+            await message.reply(f"🎲 Число: <b>{random.randint(1, 6)}</b>")
+
+        return
+
+    if any(word in msg_text for word in BAD_WORDS):
+        if random.random() < 0.25:
+            await message.reply(random.choice(SHAME_VARIATIONS))
+
+@dp.message(is_private_chat, is_allowed_user, F.text.startswith("/msg "))
+async def aura_anon_message(message: types.Message):
+    text = message.text.replace("/msg ", "", 1).strip()
+    if not text: return
+    for g_id in ALLOWED_GROUPS:
+        try: await bot.send_message(chat_id=g_id, text=f"💌 <b>Анонимно:</b>\n\n{text}")
+        except: continue
+    await message.reply("✅ Отправлено!")
+
+async def main():
+    if not TOKEN: return
+    asyncio.create_task(start_uptime_server())
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        print("Бот остановлен.")
+    asyncio.run(main())
