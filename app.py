@@ -105,6 +105,7 @@ def get_status(balance):
 # --- ПАМЯТЬ БОТА ---
 LAST_ANSWERS = {}
 AURA_COOLDOWN = {}
+RISK_COOLDOWN = {} # КД для ставок
 USER_JOINS_TODAY = {} 
 USER_MESSAGES = load_stats()
 
@@ -164,7 +165,7 @@ HELP_TEXT = (
     "🔥 <code>Аура риск [ставка]</code> - казино\n"
     "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n\n"
     "<b>Доступные команды:</b>\n"
-    "🎬 <code>Аура тт скачать</code> - скачать видео (в ответ на ссылку)\n"
+    "🎬 <code>Аура тт скачать</code> - скачать видео из тиктока (в ответ на ссылку)\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
     "🎱 <code>Аура да нет [вопрос]</code>\n"
     "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
@@ -340,6 +341,12 @@ async def main_group_handler(message: types.Message):
             await message.reply(f"✅ Ты перевел <b>{amount}</b> 💎 пользователю <a href='tg://user?id={recipient_id}'>{recipient_name}</a>")
 
         elif msg_text.startswith("аура риск"):
+            # Проверка кулдауна на ставку (1 минута)
+            if int(uid) in RISK_COOLDOWN and (now - RISK_COOLDOWN[int(uid)]) < 60:
+                rem = int(60 - (now - RISK_COOLDOWN[int(uid)]))
+                await message.reply(f"⏳ Не так часто! Рисковать можно раз в минуту. Подожди еще <b>{rem} сек.</b>")
+                return
+
             u_data = USER_MESSAGES[uid]
             try:
                 bet = int(msg_text.split()[2])
@@ -374,6 +381,9 @@ async def main_group_handler(message: types.Message):
             change = int(bet * mult)
             u_data["balance"] += change
             if u_data["balance"] < 0: u_data["balance"] = 0
+            
+            # Устанавливаем КД
+            RISK_COOLDOWN[int(uid)] = now
             
             asyncio.to_thread(save_stats, USER_MESSAGES)
             await message.reply(f"{res_text}\nИзменение: <b>{'+' if change >= 0 else ''}{change}</b> 💎\nБаланс: <b>{u_data['balance']}</b>")
