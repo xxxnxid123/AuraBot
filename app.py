@@ -548,8 +548,18 @@ async def main_group_handler(message: types.Message):
         elif "кости" in msg_text: await message.reply(f"🎲 Число: <b>{random.randint(1, 6)}</b>")
         return
 
-    if any(word in msg_text for word in BAD_WORDS):
-        if random.random() < 0.25: await message.reply(random.choice(SHAME_VARIATIONS))
+    # --- ФИЛЬТР МАТА С УМНЫМ ПОИСКОМ И ШТРАФОМ ---
+    bad_pattern = r"(^|[^а-яё])(хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо)[а-яё]*"
+    matches = re.findall(bad_pattern, msg_text)
+    
+    if matches:
+        count = len(matches)
+        fine = count * 5
+        USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - fine)
+        asyncio.to_thread(save_stats, USER_MESSAGES)
+        
+        if random.random() < 0.25:
+            await message.reply(f"{random.choice(SHAME_VARIATIONS)}\nСписано: <b>-{fine}</b> аур за мат.")
 
 @dp.message(is_private_chat, is_allowed_user, F.text.startswith("/msg "))
 async def aura_anon_message(message: types.Message):
