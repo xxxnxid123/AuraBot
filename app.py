@@ -105,7 +105,7 @@ def get_status(balance):
 # --- ПАМЯТЬ БОТА ---
 LAST_ANSWERS = {}
 AURA_COOLDOWN = {}
-RISK_COOLDOWN = {} # КД для ставок
+RISK_COOLDOWN = {} 
 USER_JOINS_TODAY = {} 
 USER_MESSAGES = load_stats()
 
@@ -302,7 +302,8 @@ async def main_group_handler(message: types.Message):
         else:
             response_text = f"{shame_phrase}\nУ тебя списано <b>{total_fine}</b> 💎"
         await message.reply(response_text)
-        asyncio.to_thread(save_stats, USER_MESSAGES) # Без await для скорости
+        # Сохраняем в таблицу при штрафах (важное событие)
+        asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
     # АВТО-ОБНАРУЖЕНИЕ TIKTOK
     tt_match = re.search(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+|http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.text)
@@ -327,7 +328,7 @@ async def main_group_handler(message: types.Message):
                 u_data["last_farm"] = now
                 status = get_status(u_data["balance"])
                 await message.reply(f"⛏ Ты нафармил <b>{reward}</b> 💎\nТвой баланс: <b>{u_data['balance']}</b>\nТвой статус: <b>{status}</b>")
-                asyncio.to_thread(save_stats, USER_MESSAGES) # Сохраняем после ответа
+                asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES)) 
 
         elif msg_text == "аура баланс":
             balance = USER_MESSAGES[uid].get("balance", 0)
@@ -373,43 +374,37 @@ async def main_group_handler(message: types.Message):
                 USER_MESSAGES[recipient_id] = {"name": recipient_name, "times": [], "balance": 0, "last_farm": 0}
             USER_MESSAGES[uid]["balance"] -= amount
             USER_MESSAGES[recipient_id]["balance"] += amount
-            # ФИКС: Сначала отвечаем, потом фоном сохраняем
             await message.reply(f"✅ Ты перевел <b>{amount}</b> 💎 пользователю <a href='tg://user?id={recipient_id}'>{recipient_name}</a>")
-            asyncio.to_thread(save_stats, USER_MESSAGES)
+            asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
         elif msg_text.startswith("аура ставка"):
-            if int(uid) in RISK_COOLDOWN and (now - RISK_COOLDOWN[int(uid)]) < 60:
-                # Считаем, сколько реально осталось ждать
-                remaining = int(60 - (now - RISK_COOLDOWN[int(uid)]))
-                msg = await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{remaining} сек.</b>")
-                
-                # Цикл обновления: от текущего остатка до 0 с шагом -1 (каждую секунду)
-                for r in range(remaining - 1, -1, -1):
-                    await asyncio.sleep(1) # Ждем ровно 1 секунду
-                    try:
-                        if r > 0:
-                            await msg.edit_text(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{r} сек.</b>")
-                        else:
-                            await msg.edit_text("✨ Можно бурмалдить!")
-                    except:
-                        break # Если пользователь удалил сообщение, выходим из цикла
-                return
+            uid_int = int(uid)
+            if uid_int in RISK_COOLDOWN:
+                passed = now - RISK_COOLDOWN[uid_int]
+                if passed < 60:
+                    remaining = int(60 - passed)
+                    await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{remaining} сек.</b>")
+                    return
+
             u_data = USER_MESSAGES[uid]
             try:
                 bet = int(msg_text.split()[2])
             except:
                 await message.reply("Пиши: <code>Аура ставка [сумма]</code>")
                 return
+
             if bet <= 0:
                 await message.reply("Ставка должна быть больше 0!")
                 return
             if bet > u_data.get("balance", 0):
                 await message.reply("У тебя нет столько 💎!")
                 return
+
             dice = random.random()
             is_lose = False
+            
             if dice < 0.05:
-                mult, res_text = -2, "КРИТ ПРОВАЛ! Ты потерял ставку в двойном размере! 💀"
+                mult, res_text = -2, "КРИТИЧЕСКИЙ ПРОВАЛ! Ты потерял ставку в двойном размере! 💀"
                 is_lose = True
             elif dice < 0.20:
                 mult, res_text = -1.5, "Неудачный риск! Потерял 1.5x от ставки. 📉"
@@ -419,15 +414,18 @@ async def main_group_handler(message: types.Message):
             elif dice < 0.75:
                 mult, res_text = 0.5, "Хорошо! Твоя прибыль +0.5x ставки! 📈"
             elif dice < 0.95:
-                mult, res_text = 1, "Удача! Ты удвоил ставку (+1x)! 💰"
+                mult, res_text = 1, "Удача! Ты удвоил ставку (+2x)! 💰"
             else:
-                mult, res_text = 2, "ДЖЕКПОТ!!! Тройная прибыль (+2x)! 🔥"
+                mult, res_text = 2, "ДЖЕКПОТ!!! Тройная прибыль (+3x)! 🔥"
+
             change = int(bet * mult)
             u_data["balance"] += change
             if u_data["balance"] < 0: u_data["balance"] = 0
-            RISK_COOLDOWN[int(uid)] = now
+            RISK_COOLDOWN[uid_int] = now
+            
             await message.reply(f"{res_text}\nИзменение: <b>{'+' if change >= 0 else ''}{change}</b> 💎\nБаланс: <b>{u_data['balance']}</b>")
-            asyncio.to_thread(save_stats, USER_MESSAGES) # Сохраняем после ответа
+            asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
+
             if is_lose:
                 await asyncio.sleep(1)
                 await message.answer(random.choice(LOSE_TROLL_PHRASES))
@@ -523,16 +521,31 @@ async def main_group_handler(message: types.Message):
         
         elif msg_text.startswith("аура аура"):
             target = message.text[9:].strip()
+            uid_int = int(uid)
+
             if not target:
-                if int(uid) in AURA_COOLDOWN and (now - AURA_COOLDOWN[int(uid)]) < 10:
-                    msg = await message.reply(f"⏳ Подожди...")
-                    for r in range(int(10-(now-AURA_COOLDOWN[int(uid)])), 0, -1):
-                        await asyncio.sleep(1)
-                        try: await msg.edit_text(f"⏳ Подожди <b>{r} сек.</b>")
+                if uid_int in AURA_COOLDOWN:
+                    passed = now - AURA_COOLDOWN[uid_int]
+                    if passed < 10:
+                        remaining = int(10 - passed)
+                        try: await message.reply(f"⏳ Ты уже запрашивал ауру! Подожди еще <b>{remaining} сек.</b>")
+                        except: pass
+                        return
+
+                AURA_COOLDOWN[uid_int] = now
+                res = random.choice(AURA_VALUES)
+                
+                wait_msg = await message.reply(f"🔮 Анализирую твою ауру... Подожди <b>10 сек.</b>")
+                # Для 10 секунд - обновляем каждые 2 сек до 4-х, потом каждую секунду (защита 429)
+                for r in range(9, -1, -1):
+                    await asyncio.sleep(1)
+                    if r == 0:
+                        try: await wait_msg.edit_text(f"💎 Твоя аура: <b>{res}</b>")
+                        except: await message.answer(f"💎 Твоя аура: <b>{res}</b>")
+                    elif r <= 5 or r % 2 == 0: # Обновляем чаще в конце или раз в 2 сек в начале
+                        try: await wait_msg.edit_text(f"🔮 Анализирую твою ауру... Подожди <b>{r} сек.</b>")
                         except: break
-                    return
-                res = random.choice(AURA_VALUES); AURA_COOLDOWN[int(uid)] = now
-                await message.reply(f"💎 Твоя аура: <b>{res}</b>")
+            
             elif target.lower() in ["@aurabotn_bot", "ауры", "аура", "aura"]:
                 res = random.choice(SELF_AURA_VALUES)
                 await message.reply(f"💎 Моя аура: <b>{res}</b>")
@@ -554,12 +567,19 @@ async def main_group_handler(message: types.Message):
                 if sec > 300: 
                     await message.reply("Максимум 300 секунд!")
                     return
+                
                 msg = await message.reply(f"⏳ Таймер запущен: <b>{sec} сек.</b>")
+                
                 for s in range(sec - 1, -1, -1):
                     await asyncio.sleep(1)
-                    try: await msg.edit_text(f"⏳ Осталось: <b>{s} сек.</b>")
+                    try:
+                        if s == 0:
+                            await msg.edit_text("🔔 Время вышло!")
+                            await message.answer(f"🔔 {message.from_user.mention_html()}, время вышло!")
+                        # ЛОГИКА 429: Редактируем раз в 5 сек, если > 10. Если <= 10, то каждую секунду.
+                        elif s <= 10 or s % 5 == 0:
+                            await msg.edit_text(f"⏳ Осталось: <b>{s} сек.</b>")
                     except: break 
-                await message.answer(f"🔔 {message.from_user.mention_html()}, время вышло!")
             except: 
                 await message.reply("Пиши: <code>Аура таймер [время в сек]</code>")
 
