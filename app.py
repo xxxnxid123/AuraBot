@@ -288,21 +288,28 @@ async def main_group_handler(message: types.Message):
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
 
-    # --- ИСПРАВЛЕННЫЙ ФИЛЬТР МАТА (РЕАГИРУЕТ НА КАЖДОЕ СЛОВО) ---
+    # --- ИСПРАВЛЕННЫЙ ФИЛЬТР МАТА (ВСЁ В ОДНОМ СООБЩЕНИИ) ---
     bad_pattern = r"(?:^|[^а-яё])(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо)[а-яё]*"
     matches = re.findall(bad_pattern, msg_text)
     
     if matches:
-        for _ in matches:  # Цикл по каждому найденному мату
-            fine = 5
-            # Снимаем за каждое слово
-            USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - fine)
-            
-            # Убрал шанс 0.25, чтобы он отвечал ВСЕГДА, когда видит мат
-            await message.reply(f"{random.choice(SHAME_VARIATIONS)}\nУ тебя списано <b>{fine}</b> 💎")
+        count = len(matches)
+        total_fine = count * 5
         
-        # Сохраняем один раз после всех списаний
-        asyncio.to_thread(save_stats, USER_MESSAGES)
+        # Списываем всю сумму сразу
+        USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - total_fine)
+        
+        # Формируем ответ: если мат один — обычная фраза, если несколько — пишем количество
+        shame_phrase = random.choice(SHAME_VARIATIONS)
+        if count > 1:
+            response_text = f"{shame_phrase}\nПосчитала матов: <b>{count}</b> шт.\nИтого списано: <b>{total_fine}</b> 💎"
+        else:
+            response_text = f"{shame_phrase}\nУ тебя списано <b>{total_fine}</b> 💎"
+            
+        await message.reply(response_text)
+        
+        # Синхронизируем с таблицей
+        await asyncio.to_thread(save_stats, USER_MESSAGES)
 
     # АВТО-ОБНАРУЖЕНИЕ TIKTOK
     tt_match = re.search(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+|http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.text)
