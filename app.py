@@ -244,14 +244,12 @@ async def run_independent_timer(msg, initial_sec, user_mention):
         except: break
 
 async def run_bet_cooldown_static(msg, remaining):
-    # Просто ждем время без цикличного редактирования
     await asyncio.sleep(remaining)
     try:
         await msg.edit_text("✅ Кулдаун прошел! Можно ставить снова.")
     except: pass
 
 async def run_aura_analysis_static(msg, result):
-    # Просто ждем 10 секунд без цикличного редактирования
     await asyncio.sleep(10)
     try:
         await msg.edit_text(f"💎 Твоя аура: <b>{result}</b>")
@@ -315,7 +313,6 @@ async def main_group_handler(message: types.Message):
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
 
-    # --- ФИЛЬТР МАТОВ ---
     bad_pattern = r"(?i)\b(?:а|о|вы|по|на|при|у|ни)?(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо|хуе|хуя)[а-яё]*"
     matches = re.findall(bad_pattern, msg_text)
     
@@ -380,10 +377,12 @@ async def main_group_handler(message: types.Message):
                 await message.reply("Эту команду нужно писать ответом на сообщение того, кому хочешь перевести 💎")
                 return
             try:
-                amount = int(msg_text.split()[2])
+                parts = msg_text.split()
+                amount = int(parts[2])
             except:
                 await message.reply("Пиши: <code>Аура перевод [сумма]</code> (ответом на сообщение)")
                 return
+            
             recipient_id = str(message.reply_to_message.from_user.id)
             recipient_name = message.reply_to_message.from_user.first_name
             bot_id = str((await bot.get_me()).id)
@@ -398,7 +397,14 @@ async def main_group_handler(message: types.Message):
                 await message.reply("Переводить самому себе? Гениально.")
                 return
 
-            fee = int(amount * 0.01) if amount >= 100 else 1
+            # --- ЛОГИКА КОМИССИИ ---
+            fee = int(amount * 0.01)
+            fee_label = "(1%)"
+            
+            if amount < 100:
+                fee = 1
+                fee_label = "(1)"
+            
             final_amount = amount - fee
 
             if bot_id not in USER_MESSAGES:
@@ -414,7 +420,7 @@ async def main_group_handler(message: types.Message):
                 f"✅ <b>Перевод успешно выполнен!</b>\n\n"
                 f"👤 Получатель: <a href='tg://user?id={recipient_id}'>{recipient_name}</a>\n"
                 f"💸 Сумма перевода: <b>{amount}</b> 💎\n"
-                f"🧾 Комиссия (1%): <b>{fee}</b> 💎\n"
+                f"🧾 Комиссия {fee_label}: <b>{fee}</b> 💎\n"
                 f"💰 <b>Дошло до получателя: {final_amount}</b> 💎"
             )
             await message.reply(report_msg)
@@ -427,7 +433,6 @@ async def main_group_handler(message: types.Message):
                 if passed < 60:
                     remaining = int(60 - passed)
                     wait_bet_msg = await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту.\nПосиди еще: <b>{remaining} сек.</b>")
-                    # Сделали статичное ожидание
                     asyncio.create_task(run_bet_cooldown_static(wait_bet_msg, remaining))
                     return
 
@@ -580,7 +585,6 @@ async def main_group_handler(message: types.Message):
                 AURA_COOLDOWN[uid_int] = now
                 res = random.choice(AURA_VALUES)
                 wait_msg = await message.reply(f"🔮 Анализирую твою ауру... Подожди 10 сек.")
-                # Сделали статичное ожидание
                 asyncio.create_task(run_aura_analysis_static(wait_msg, res))
             
             elif target.lower() in ["@aurabotn_bot", "ауры", "аура", "aura"]:
