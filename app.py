@@ -288,17 +288,21 @@ async def main_group_handler(message: types.Message):
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
 
-    # --- ФИЛЬТР МАТА (В НАЧАЛЕ) ---
+    # --- ИСПРАВЛЕННЫЙ ФИЛЬТР МАТА (РЕАГИРУЕТ НА КАЖДОЕ СЛОВО) ---
     bad_pattern = r"(?:^|[^а-яё])(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо)[а-яё]*"
     matches = re.findall(bad_pattern, msg_text)
     
     if matches:
-        count = len(matches)
-        fine = count * 5
-        USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - fine)
-        asyncio.to_thread(save_stats, USER_MESSAGES)
-        if random.random() < 0.25:
+        for _ in matches:  # Цикл по каждому найденному мату
+            fine = 5
+            # Снимаем за каждое слово
+            USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - fine)
+            
+            # Убрал шанс 0.25, чтобы он отвечал ВСЕГДА, когда видит мат
             await message.reply(f"{random.choice(SHAME_VARIATIONS)}\nУ тебя списано <b>{fine}</b> 💎")
+        
+        # Сохраняем один раз после всех списаний
+        asyncio.to_thread(save_stats, USER_MESSAGES)
 
     # АВТО-ОБНАРУЖЕНИЕ TIKTOK
     tt_match = re.search(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+|http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.text)
