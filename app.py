@@ -230,7 +230,7 @@ def download_tiktok(url):
         print(f"Ошибка скачивания ТТ: {e}")
         return None
 
-# --- ФУНКЦИИ НЕЗАВИСИМЫХ ТАЙМЕРОВ (создают фоновые задачи) ---
+# --- ФУНКЦИИ НЕЗАВИСИМЫХ ТАЙМЕРОВ ---
 async def run_independent_timer(msg, initial_sec, user_mention):
     for s in range(initial_sec - 1, -1, -1):
         await asyncio.sleep(1)
@@ -395,7 +395,7 @@ async def main_group_handler(message: types.Message):
                 return
             recipient_id = str(message.reply_to_message.from_user.id)
             recipient_name = message.reply_to_message.from_user.first_name
-            bot_id = str((await bot.get_me()).id) # ID для казны
+            bot_id = str((await bot.get_me()).id)
 
             if amount <= 0:
                 await message.reply("Сумма должна быть больше 0!")
@@ -408,7 +408,7 @@ async def main_group_handler(message: types.Message):
                 return
 
             # --- ЛОГИКА КОМИССИИ ---
-            fee = int(amount * 0.01) # 1% комиссия
+            fee = int(amount * 0.01) if amount >= 100 else 1
             final_amount = amount - fee
 
             if bot_id not in USER_MESSAGES:
@@ -420,7 +420,15 @@ async def main_group_handler(message: types.Message):
             USER_MESSAGES[recipient_id]["balance"] += final_amount
             USER_MESSAGES[bot_id]["balance"] += fee
 
-            await message.reply(f"✅ Перевод выполнен!\n\nПолучатель: <a href='tg://user?id={recipient_id}'>{recipient_name}</a>\nЗачислено: <b>{final_amount}</b> 💎\nКомиссия (1%): <b>{fee}</b> 💎 (ушло боту)")
+            # Текст сообщения с подробностями
+            report_msg = (
+                f"✅ <b>Перевод успешно выполнен!</b>\n\n"
+                f"👤 Получатель: <a href='tg://user?id={recipient_id}'>{recipient_name}</a>\n"
+                f"💸 Сумма перевода: <b>{amount}</b> 💎\n"
+                f"🧾 Комиссия (1%): <b>{fee}</b> 💎\n"
+                f"💰 <b>Дошло до получателя: {final_amount}</b> 💎"
+            )
+            await message.reply(report_msg)
             asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
         elif msg_text.startswith("аура ставка"):
@@ -430,7 +438,6 @@ async def main_group_handler(message: types.Message):
                 if passed < 60:
                     remaining = int(60 - passed)
                     wait_bet_msg = await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту.\nПосиди еще: <b>{remaining} сек.</b>")
-                    # ЗАПУСК НЕЗАВИСИМОЙ ЗАДАЧИ КУЛДАУНА
                     asyncio.create_task(run_bet_cooldown(wait_bet_msg, remaining))
                     return
 
@@ -583,7 +590,6 @@ async def main_group_handler(message: types.Message):
                 AURA_COOLDOWN[uid_int] = now
                 res = random.choice(AURA_VALUES)
                 wait_msg = await message.reply(f"🔮 Анализирую твою ауру... Подожди <b>10 сек.</b>")
-                # ЗАПУСК НЕЗАВИСИМОЙ ЗАДАЧИ АНАЛИЗА
                 asyncio.create_task(run_aura_analysis(wait_msg, res))
             
             elif target.lower() in ["@aurabotn_bot", "ауры", "аура", "aura"]:
@@ -609,7 +615,6 @@ async def main_group_handler(message: types.Message):
                     return
                 
                 msg = await message.reply(f"⏳ Таймер запущен: <b>{sec} сек.</b>")
-                # ЗАПУСК НЕЗАВИСИМОЙ ЗАДАЧИ ТАЙМЕРА
                 asyncio.create_task(run_independent_timer(msg, sec, message.from_user.mention_html()))
             except: 
                 await message.reply("Пиши: <code>Аура таймер [время в сек]</code>")
@@ -635,3 +640,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
