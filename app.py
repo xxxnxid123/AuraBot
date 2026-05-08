@@ -230,7 +230,7 @@ def download_tiktok(url):
         print(f"Ошибка скачивания ТТ: {e}")
         return None
 
-# --- ФУНКЦИИ НЕЗАВИСИМЫХ ТАЙМЕРОВ ---
+# --- ФУНКЦИИ НЕЗАВИСИМЫХ ТАЙМЕРОВ (ОПТИМИЗИРОВАННЫЕ) ---
 async def run_independent_timer(msg, initial_sec, user_mention):
     for s in range(initial_sec - 1, -1, -1):
         await asyncio.sleep(1)
@@ -243,27 +243,19 @@ async def run_independent_timer(msg, initial_sec, user_mention):
                 await msg.edit_text(f"⏳ Осталось: <b>{s} сек.</b>")
         except: break
 
-async def run_bet_cooldown(msg, remaining):
-    for r_sec in range(remaining - 1, -1, -1):
-        await asyncio.sleep(1)
-        try:
-            if r_sec == 0:
-                await msg.edit_text("✅ Кулдаун прошел! Можно ставить снова.")
-                break
-            elif r_sec <= 5 or r_sec % 5 == 0:
-                await msg.edit_text(f"⏳ Не так часто! Бурмалдить можно раз в минуту.\nПосиди еще: <b>{r_sec} сек.</b>")
-        except: break
+async def run_bet_cooldown_static(msg, remaining):
+    # Просто ждем время без цикличного редактирования
+    await asyncio.sleep(remaining)
+    try:
+        await msg.edit_text("✅ Кулдаун прошел! Можно ставить снова.")
+    except: pass
 
-async def run_aura_analysis(msg, result):
-    for r in range(9, -1, -1):
-        await asyncio.sleep(1)
-        try:
-            if r == 0:
-                await msg.edit_text(f"💎 Твоя аура: <b>{result}</b>")
-                return
-            elif r <= 5 or r % 2 == 0:
-                await msg.edit_text(f"🔮 Анализирую твою ауру... Подожди <b>{r} сек.</b>")
-        except: break
+async def run_aura_analysis_static(msg, result):
+    # Просто ждем 10 секунд без цикличного редактирования
+    await asyncio.sleep(10)
+    try:
+        await msg.edit_text(f"💎 Твоя аура: <b>{result}</b>")
+    except: pass
 
 # --- ОБРАБОТЧИКИ ---
 @dp.message(CommandStart())
@@ -323,7 +315,7 @@ async def main_group_handler(message: types.Message):
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
 
-    # --- УМНЫЙ ФИЛЬТР МАТОВ ---
+    # --- ФИЛЬТР МАТОВ ---
     bad_pattern = r"(?i)\b(?:а|о|вы|по|на|при|у|ни)?(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо|хуе|хуя)[а-яё]*"
     matches = re.findall(bad_pattern, msg_text)
     
@@ -339,7 +331,6 @@ async def main_group_handler(message: types.Message):
         await message.reply(response_text)
         asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
-    # АВТО-ОБНАРУЖЕНИЕ TIKTOK
     tt_match = re.search(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+|http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.text)
     if tt_match and not msg_text.startswith("аура"):
         url = tt_match.group(0)
@@ -407,7 +398,6 @@ async def main_group_handler(message: types.Message):
                 await message.reply("Переводить самому себе? Гениально.")
                 return
 
-            # --- ЛОГИКА КОМИССИИ ---
             fee = int(amount * 0.01) if amount >= 100 else 1
             final_amount = amount - fee
 
@@ -420,7 +410,6 @@ async def main_group_handler(message: types.Message):
             USER_MESSAGES[recipient_id]["balance"] += final_amount
             USER_MESSAGES[bot_id]["balance"] += fee
 
-            # Текст сообщения с подробностями
             report_msg = (
                 f"✅ <b>Перевод успешно выполнен!</b>\n\n"
                 f"👤 Получатель: <a href='tg://user?id={recipient_id}'>{recipient_name}</a>\n"
@@ -438,7 +427,8 @@ async def main_group_handler(message: types.Message):
                 if passed < 60:
                     remaining = int(60 - passed)
                     wait_bet_msg = await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту.\nПосиди еще: <b>{remaining} сек.</b>")
-                    asyncio.create_task(run_bet_cooldown(wait_bet_msg, remaining))
+                    # Сделали статичное ожидание
+                    asyncio.create_task(run_bet_cooldown_static(wait_bet_msg, remaining))
                     return
 
             u_data = USER_MESSAGES[uid]
@@ -589,8 +579,9 @@ async def main_group_handler(message: types.Message):
 
                 AURA_COOLDOWN[uid_int] = now
                 res = random.choice(AURA_VALUES)
-                wait_msg = await message.reply(f"🔮 Анализирую твою ауру... Подожди <b>10 сек.</b>")
-                asyncio.create_task(run_aura_analysis(wait_msg, res))
+                wait_msg = await message.reply(f"🔮 Анализирую твою ауру... Подожди 10 сек.")
+                # Сделали статичное ожидание
+                asyncio.create_task(run_aura_analysis_static(wait_msg, res))
             
             elif target.lower() in ["@aurabotn_bot", "ауры", "аура", "aura"]:
                 res = random.choice(SELF_AURA_VALUES)
@@ -640,4 +631,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
