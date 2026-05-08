@@ -162,7 +162,7 @@ HELP_TEXT = (
     "⛏ <code>Аура фарм</code> - заработать 💎\n"
     "💰 <code>Аура баланс</code> - твой счет\n"
     "🏆 <code>Аура топ</code> - богачи чата\n"
-    "🔥 <code>Аура риск [ставка]</code> - казино\n"
+    "🔥 <code>Аура ставка [сумма]</code> - казино\n"
     "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n\n"
     "<b>Доступные команды:</b>\n"
     "🎬 <code>Аура тт скачать</code> - скачать видео из тиктока (в ответ на ссылку)\n"
@@ -340,18 +340,18 @@ async def main_group_handler(message: types.Message):
             asyncio.to_thread(save_stats, USER_MESSAGES)
             await message.reply(f"✅ Ты перевел <b>{amount}</b> 💎 пользователю <a href='tg://user?id={recipient_id}'>{recipient_name}</a>")
 
-        elif msg_text.startswith("аура риск"):
+        elif msg_text.startswith("аура ставка"):
             # Проверка кулдауна на ставку (1 минута)
             if int(uid) in RISK_COOLDOWN and (now - RISK_COOLDOWN[int(uid)]) < 60:
                 rem = int(60 - (now - RISK_COOLDOWN[int(uid)]))
-                await message.reply(f"⏳ Не так часто! Рисковать можно раз в минуту. Подожди еще <b>{rem} сек.</b>")
+                await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{rem} сек.</b>")
                 return
 
             u_data = USER_MESSAGES[uid]
             try:
                 bet = int(msg_text.split()[2])
             except:
-                await message.reply("Пиши: <code>Аура риск [сумма]</code>")
+                await message.reply("Пиши: <code>Аура ставка [сумма]</code>")
                 return
 
             if bet <= 0:
