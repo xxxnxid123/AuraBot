@@ -3,16 +3,21 @@ import random
 import os
 import time
 import json
+import re
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.utils.link import create_tg_link
+from aiogram.types import FSInputFile
 
 # БИБЛИОТЕКИ ДЛЯ ТАБЛИЦ
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+
+# БИБЛИОТЕКА ДЛЯ СКАЧИВАНИЯ (нужно установить: pip install yt-dlp)
+import yt_dlp
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
@@ -133,7 +138,6 @@ SHAME_VARIATIONS = [
     "Твои слова пахнут плохо. Давай без этого в моем присутствии."
 ]
 
-# Фразы при проигрыше в казино
 LOSE_TROLL_PHRASES = [
     "не играйте в казино пацаны",
     "ахахахахах",
@@ -142,7 +146,6 @@ LOSE_TROLL_PHRASES = [
     "лох это судьба",
     "казино всегда побеждает, когда вы поймете",
     "кто-то сегодня остался без обеда",
-    "зато админ стал богаче, спасибо",
     "ну ты выдал конечно",
     "кринжанул знатно с такой ставки"
 ]
@@ -161,6 +164,7 @@ HELP_TEXT = (
     "🔥 <code>Аура риск [ставка]</code> - казино\n"
     "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n\n"
     "<b>Доступные команды:</b>\n"
+    "🎬 <code>Аура тт скачать</code> - скачать видео (в ответ на ссылку)\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
     "🎱 <code>Аура да нет [вопрос]</code>\n"
     "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
@@ -202,6 +206,22 @@ async def start_uptime_server():
     port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
+
+# Функция для скачивания TikTok
+def download_tiktok(url):
+    ydl_opts = {
+        'format': 'bestvideo+bestaudio/best',
+        'outtmpl': 'tiktok_video.mp4',
+        'quiet': True,
+        'no_warnings': True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+            return "tiktok_video.mp4"
+    except Exception as e:
+        print(f"Ошибка скачивания ТТ: {e}")
+        return None
 
 # --- ОБРАБОТЧИКИ ---
 @dp.message(CommandStart())
@@ -306,7 +326,6 @@ async def main_group_handler(message: types.Message):
             if USER_MESSAGES[uid].get("balance", 0) < amount:
                 await message.reply("У тебя не хватает 💎 для перевода!")
                 return
-
             if uid == recipient_id:
                 await message.reply("Переводить самому себе? Гениально.")
                 return
@@ -362,6 +381,30 @@ async def main_group_handler(message: types.Message):
             if is_lose:
                 await asyncio.sleep(1)
                 await message.answer(random.choice(LOSE_TROLL_PHRASES))
+
+        elif msg_text == "аура тт скачать":
+            if not message.reply_to_message or not message.reply_to_message.text:
+                await message.reply("Ответь этой командой на сообщение с ссылкой на TikTok!")
+                return
+            
+            urls = re.findall(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+', message.reply_to_message.text)
+            if not urls:
+                urls = re.findall(r'http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.reply_to_message.text)
+            
+            if not urls:
+                await message.reply("В сообщении не найдено ссылки на TikTok.")
+                return
+            
+            wait_msg = await message.reply("⏳ Пытаюсь достать видео из ТикТока... Подожди.")
+            
+            video_path = await asyncio.to_thread(download_tiktok, urls[0])
+            
+            if video_path and os.path.exists(video_path):
+                await message.answer_video(FSInputFile(video_path), caption="🎬 Ваше видео из TikTok")
+                os.remove(video_path)
+                await wait_msg.delete()
+            else:
+                await wait_msg.edit_text("❌ Не удалось скачать видео. Возможно, оно приватное или ссылка битая.")
 
         elif "стата" in msg_text or "статистика" in msg_text:
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
