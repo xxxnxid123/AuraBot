@@ -10,7 +10,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.utils.link import create_tg_link
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 
 # БИБЛИОТЕКИ ДЛЯ ТАБЛИЦ
 import gspread
@@ -151,6 +151,13 @@ LOSE_TROLL_PHRASES = [
     "хахха это че за ставка"
 ]
 
+TT_OFFER_TEXTS = [
+    "Вижу тут легендарный ТикТок! Желаете скачать?",
+    "О, годнота из ТТ! Могу скачать это видео без водяного знака.",
+    "Чисто мёд по телу, а не ТикТок. Скачать?",
+    "Аура подсказывает, что этот видос надо сохранить. Качаем?"
+]
+
 # --- ФИЛЬТРЫ ---
 is_allowed_user = F.from_user.id.in_(ALLOWED_USERS)
 is_allowed_group = F.chat.id.in_(ALLOWED_GROUPS)
@@ -208,18 +215,17 @@ async def start_uptime_server():
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
 
-# Функция для скачивания TikTok
 def download_tiktok(url):
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best',
-        'outtmpl': 'tiktok_video.mp4',
+        'outtmpl': 'tiktok_video_%(id)s.mp4',
         'quiet': True,
         'no_warnings': True,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-            return "tiktok_video.mp4"
+            info = ydl.extract_info(url, download=True)
+            return ydl.prepare_filename(info)
     except Exception as e:
         print(f"Ошибка скачивания ТТ: {e}")
         return None
@@ -227,6 +233,20 @@ def download_tiktok(url):
 # --- ОБРАБОТЧИКИ ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message): await message.reply(HELP_TEXT)
+
+@dp.callback_query(F.data.startswith("dl_tt_"))
+async def cb_download_tt(callback: types.CallbackQuery):
+    url = callback.data.replace("dl_tt_", "")
+    wait_msg = await callback.message.answer("⏳ Пытаюсь достать видео из ТикТока... Подожди.")
+    await callback.answer("Начинаю загрузку...")
+    
+    video_path = await asyncio.to_thread(download_tiktok, url)
+    if video_path and os.path.exists(video_path):
+        await callback.message.answer_video(FSInputFile(video_path), caption="🎬 Ваше видео из TikTok")
+        os.remove(video_path)
+        await wait_msg.delete()
+    else:
+        await wait_msg.edit_text("❌ Не удалось скачать видео. Возможно, оно приватное или ссылка битая.")
 
 @dp.message(F.new_chat_members)
 async def welcome_new_member(message: types.Message):
@@ -267,6 +287,13 @@ async def main_group_handler(message: types.Message):
         USER_MESSAGES[uid] = {"name": uname, "times": [], "balance": 0, "last_farm": 0}
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
+
+    # АВТО-ОБНАРУЖЕНИЕ TIKTOK
+    tt_match = re.search(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+|http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.text)
+    if tt_match and not msg_text.startswith("аура"):
+        url = tt_match.group(0)
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎬 Скачать видео", callback_data=f"dl_tt_{url}")]])
+        await message.reply(random.choice(TT_OFFER_TEXTS), reply_markup=kb)
 
     if msg_text.startswith("аура"):
         if int(uid) not in ALLOWED_USERS: return
@@ -341,10 +368,12 @@ async def main_group_handler(message: types.Message):
             await message.reply(f"✅ Ты перевел <b>{amount}</b> 💎 пользователю <a href='tg://user?id={recipient_id}'>{recipient_name}</a>")
 
         elif msg_text.startswith("аура ставка"):
-            # Проверка кулдауна на ставку (1 минута)
             if int(uid) in RISK_COOLDOWN and (now - RISK_COOLDOWN[int(uid)]) < 60:
-                rem = int(60 - (now - RISK_COOLDOWN[int(uid)]))
-                await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{rem} сек.</b>")
+                msg = await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту.")
+                for r in range(int(60 - (now - RISK_COOLDOWN[int(uid)])), 0, -5):
+                    await asyncio.sleep(5)
+                    try: await msg.edit_text(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{r} сек.</b>")
+                    except: break
                 return
 
             u_data = USER_MESSAGES[uid]
@@ -381,13 +410,10 @@ async def main_group_handler(message: types.Message):
             change = int(bet * mult)
             u_data["balance"] += change
             if u_data["balance"] < 0: u_data["balance"] = 0
-            
-            # Устанавливаем КД
             RISK_COOLDOWN[int(uid)] = now
             
             asyncio.to_thread(save_stats, USER_MESSAGES)
             await message.reply(f"{res_text}\nИзменение: <b>{'+' if change >= 0 else ''}{change}</b> 💎\nБаланс: <b>{u_data['balance']}</b>")
-            
             if is_lose:
                 await asyncio.sleep(1)
                 await message.answer(random.choice(LOSE_TROLL_PHRASES))
@@ -396,25 +422,18 @@ async def main_group_handler(message: types.Message):
             if not message.reply_to_message or not message.reply_to_message.text:
                 await message.reply("Ответь этой командой на сообщение с ссылкой на TikTok!")
                 return
-            
-            urls = re.findall(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+', message.reply_to_message.text)
-            if not urls:
-                urls = re.findall(r'http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.reply_to_message.text)
-            
+            urls = re.findall(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+|http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.reply_to_message.text)
             if not urls:
                 await message.reply("В сообщении не найдено ссылки на TikTok.")
                 return
-            
             wait_msg = await message.reply("⏳ Пытаюсь достать видео из ТикТока... Подожди.")
-            
             video_path = await asyncio.to_thread(download_tiktok, urls[0])
-            
             if video_path and os.path.exists(video_path):
                 await message.answer_video(FSInputFile(video_path), caption="🎬 Ваше видео из TikTok")
                 os.remove(video_path)
                 await wait_msg.delete()
             else:
-                await wait_msg.edit_text("❌ Не удалось скачать видео. Возможно, оно приватное или ссылка битая.")
+                await wait_msg.edit_text("❌ Не удалось скачать видео.")
 
         elif "стата" in msg_text or "статистика" in msg_text:
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
@@ -492,7 +511,12 @@ async def main_group_handler(message: types.Message):
             target = message.text[9:].strip()
             if not target:
                 if int(uid) in AURA_COOLDOWN and (now - AURA_COOLDOWN[int(uid)]) < 10:
-                    await message.reply(f"⏳ Подожди {int(10-(now-AURA_COOLDOWN[int(uid)]))} сек."); return
+                    msg = await message.reply(f"⏳ Подожди...")
+                    for r in range(int(10-(now-AURA_COOLDOWN[int(uid)])), 0, -1):
+                        await asyncio.sleep(1)
+                        try: await msg.edit_text(f"⏳ Подожди <b>{r} сек.</b>")
+                        except: break
+                    return
                 res = random.choice(AURA_VALUES); AURA_COOLDOWN[int(uid)] = now
                 await message.reply(f"💎 Твоя аура: <b>{res}</b>")
             elif target.lower() in ["@aurabotn_bot", "ауры", "аура", "aura"]:
@@ -513,7 +537,11 @@ async def main_group_handler(message: types.Message):
         elif "таймер" in msg_text:
             try:
                 sec = int(msg_text.split()[2])
-                await message.reply(f"⏳ Таймер на <b>{sec}</b> сек."); await asyncio.sleep(sec)
+                msg = await message.reply(f"⏳ Таймер запущен: <b>{sec} сек.</b>")
+                for s in range(sec, 0, -5 if sec > 10 else -1):
+                    await asyncio.sleep(5 if sec > 10 else 1)
+                    try: await msg.edit_text(f"⏳ Осталось: <b>{max(0, s-5 if sec > 10 else s-1)} сек.</b>")
+                    except: break
                 await message.answer(f"🔔 {message.from_user.mention_html()}, время вышло!")
             except: await message.reply("Пиши: <code>Аура таймер [время в сек]</code>")
         elif "кости пара" in msg_text: await message.reply(f"🎲 Выпало: <b>{random.randint(1, 6)}</b> и <b>{random.randint(1, 6)}</b>")
