@@ -289,27 +289,19 @@ async def main_group_handler(message: types.Message):
     USER_MESSAGES[uid]["name"] = uname
 
     # --- УМНЫЙ ФИЛЬТР МАТОВ ---
-    # Мы ищем корни, перед которыми могут быть только типичные приставки мата
     bad_pattern = r"(?i)\b(?:а|о|вы|по|на|при|у|ни)?(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо|хуе|хуя)[а-яё]*"
     matches = re.findall(bad_pattern, msg_text)
     
     if matches:
         count = len(matches)
         total_fine = count * 5
-        
-        # Списываем всю сумму сразу
         USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - total_fine)
-        
-        # Формируем ответ: если мат один — обычная фраза, если несколько — пишем количество
         shame_phrase = random.choice(SHAME_VARIATIONS)
         if count > 1:
             response_text = f"{shame_phrase}\nПосчитала матов: <b>{count}</b> шт.\nИтого списано: <b>{total_fine}</b> 💎"
         else:
             response_text = f"{shame_phrase}\nУ тебя списано <b>{total_fine}</b> 💎"
-            
         await message.reply(response_text)
-        
-        # Синхронизируем с таблицей
         await asyncio.to_thread(save_stats, USER_MESSAGES)
 
     # АВТО-ОБНАРУЖЕНИЕ TIKTOK
@@ -333,7 +325,7 @@ async def main_group_handler(message: types.Message):
                 reward = random.randint(50, 450)
                 u_data["balance"] = u_data.get("balance", 0) + reward
                 u_data["last_farm"] = now
-                asyncio.to_thread(save_stats, USER_MESSAGES)
+                await asyncio.to_thread(save_stats, USER_MESSAGES)
                 status = get_status(u_data["balance"])
                 await message.reply(f"⛏ Ты нафармил <b>{reward}</b> 💎\nТвой баланс: <b>{u_data['balance']}</b>\nТвой статус: <b>{status}</b>")
 
@@ -347,11 +339,9 @@ async def main_group_handler(message: types.Message):
             for u_id, data in USER_MESSAGES.items():
                 if data.get("balance", 0) > 0:
                     top_list.append((data["name"], data["balance"], u_id))
-            
             if not top_list:
                 await message.reply("Список богачей пока пуст.")
                 return
-            
             top_list.sort(key=lambda x: x[1], reverse=True)
             report = "🏆 <b>Топ богачей Ауры:</b>\n\n"
             for i, (name, bal, u_id) in enumerate(top_list[:10], 1):
@@ -363,16 +353,13 @@ async def main_group_handler(message: types.Message):
             if not message.reply_to_message:
                 await message.reply("Эту команду нужно писать ответом на сообщение того, кому хочешь перевести 💎")
                 return
-            
             try:
                 amount = int(msg_text.split()[2])
             except:
                 await message.reply("Пиши: <code>Аура перевод [сумма]</code> (ответом на сообщение)")
                 return
-
             recipient_id = str(message.reply_to_message.from_user.id)
             recipient_name = message.reply_to_message.from_user.first_name
-
             if amount <= 0:
                 await message.reply("Сумма должна быть больше 0!")
                 return
@@ -382,14 +369,12 @@ async def main_group_handler(message: types.Message):
             if uid == recipient_id:
                 await message.reply("Переводить самому себе? Гениально.")
                 return
-
             if recipient_id not in USER_MESSAGES:
                 USER_MESSAGES[recipient_id] = {"name": recipient_name, "times": [], "balance": 0, "last_farm": 0}
-
             USER_MESSAGES[uid]["balance"] -= amount
             USER_MESSAGES[recipient_id]["balance"] += amount
-            
-            asyncio.to_thread(save_stats, USER_MESSAGES)
+            # ФИКС: Обязательно ждем завершения сохранения перед ответом
+            await asyncio.to_thread(save_stats, USER_MESSAGES)
             await message.reply(f"✅ Ты перевел <b>{amount}</b> 💎 пользователю <a href='tg://user?id={recipient_id}'>{recipient_name}</a>")
 
         elif msg_text.startswith("аура ставка"):
@@ -400,21 +385,18 @@ async def main_group_handler(message: types.Message):
                     try: await msg.edit_text(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{r} сек.</b>")
                     except: break
                 return
-
             u_data = USER_MESSAGES[uid]
             try:
                 bet = int(msg_text.split()[2])
             except:
                 await message.reply("Пиши: <code>Аура ставка [сумма]</code>")
                 return
-
             if bet <= 0:
                 await message.reply("Ставка должна быть больше 0!")
                 return
             if bet > u_data.get("balance", 0):
                 await message.reply("У тебя нет столько 💎!")
                 return
-
             dice = random.random()
             is_lose = False
             if dice < 0.05:
@@ -431,13 +413,11 @@ async def main_group_handler(message: types.Message):
                 mult, res_text = 1, "Удача! Ты удвоил ставку (+1x)! 💰"
             else:
                 mult, res_text = 2, "ДЖЕКПОТ!!! Тройная прибыль (+2x)! 🔥"
-
             change = int(bet * mult)
             u_data["balance"] += change
             if u_data["balance"] < 0: u_data["balance"] = 0
             RISK_COOLDOWN[int(uid)] = now
-            
-            asyncio.to_thread(save_stats, USER_MESSAGES)
+            await asyncio.to_thread(save_stats, USER_MESSAGES)
             await message.reply(f"{res_text}\nИзменение: <b>{'+' if change >= 0 else ''}{change}</b> 💎\nБаланс: <b>{u_data['balance']}</b>")
             if is_lose:
                 await asyncio.sleep(1)
