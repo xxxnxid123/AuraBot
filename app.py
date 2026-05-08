@@ -288,8 +288,9 @@ async def main_group_handler(message: types.Message):
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
 
-    # --- ИСПРАВЛЕННЫЙ ФИЛЬТР МАТА (ВСЁ В ОДНОМ СООБЩЕНИИ) ---
-    bad_pattern = r"(?:^|[^а-яё])(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо)[а-яё]*"
+    # --- УМНЫЙ ФИЛЬТР МАТОВ ---
+    # Мы ищем корни, перед которыми могут быть только типичные приставки мата
+    bad_pattern = r"(?i)\b(?:а|о|вы|по|на|при|у|ни)?(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо|хуе|хуя)[а-яё]*"
     matches = re.findall(bad_pattern, msg_text)
     
     if matches:
