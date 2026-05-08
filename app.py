@@ -110,7 +110,7 @@ AURA_VALUES = [
     67, 34, 69, 89, 322, 42, 52, 82, 1488, 228, 
     "пульсирует синим", "позорище, у тебя нет ауры", "пронырливая", "скудная", "невероятная", "бесконечная",
     "получил(а) много ауры незаконным путем", "грязная", "чистая", "выронил ауру", "украл чужую ауру", 
-    "пожертвовал свою ауру нуждающимся", "взял микрозайм на ауру", "отбывает срок за кражу ауры"
+    "пожертвовал свою ауру нуждающимся", "взял микрозайм на ауру", "отбывает срок за кражу ауры", "черная"
 ]
 
 SELF_AURA_VALUES = ["Абсолютная", "Ослепительная. Не смотри на меня", "Бесконечная конечно", "Выиграла вашу ауру в казино", "Живу на проценты с вашей ауры", "Отмыла всю грязную ауру", "Пожертвовала ауру нуждающимся"]
@@ -142,7 +142,9 @@ HELP_TEXT = (
     "✨ <b>Я Аура - ваш легендарный бот!</b> ✨\n\n"
     "<b>Экономика:</b>\n"
     "⛏ <code>Аура фарм</code> - заработать 💎\n"
-    "💰 <code>Аура баланс</code> - твой счет и статус\n\n"
+    "💰 <code>Аура баланс</code> - твой счет\n"
+    "🏆 <code>Аура топ</code> - богачи чата\n"
+    "🔥 <code>Аура риск [ставка]</code> - испытать удачу\n\n"
     "<b>Доступные команды:</b>\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
     "🎱 <code>Аура да нет [вопрос]</code>\n"
@@ -154,11 +156,11 @@ HELP_TEXT = (
     "🎲 <code>Аура кости пара</code>\n"
     "🔢 <code>Аура число [от] [до]</code>\n"
     "⏳ <code>Аура таймер [сек]</code>\n"
-    "💎 <code>Аура аура [текст]</code> - узнать свою ауру или чью-то\n"
-    "📢 <code>Аура сбор</code> - общий сбор, тегнуть пользователей чата\n"
+    "💎 <code>Аура аура [текст]</code> - узнать свою ауру\n"
+    "📢 <code>Аура сбор</code> - общий сбор\n"
     "📜 <code>Аура команды</code> - показать это меню\n\n"
     "📩 <b>Личные сообщения:</b>\n"
-    "🔐 <code>/msg [текст]</code> - отправить анонимку в чат (писать боту в ЛС)"
+    "🔐 <code>/msg [текст]</code> - анонимка в чат"
 )
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
@@ -244,7 +246,6 @@ async def main_group_handler(message: types.Message):
                 reward = random.randint(50, 450)
                 u_data["balance"] = u_data.get("balance", 0) + reward
                 u_data["last_farm"] = now
-                # Фоновое сохранение, чтобы не тормозить ответ
                 asyncio.to_thread(save_stats, USER_MESSAGES)
                 status = get_status(u_data["balance"])
                 await message.reply(f"⛏ Ты нафармил <b>{reward}</b> 💎\nТвой баланс: <b>{u_data['balance']}</b>\nТвой статус: <b>{status}</b>")
@@ -253,6 +254,63 @@ async def main_group_handler(message: types.Message):
             balance = USER_MESSAGES[uid].get("balance", 0)
             status = get_status(balance)
             await message.reply(f"💰 Твой баланс: <b>{balance}</b> 💎\nТвой статус: <b>{status}</b>")
+
+        elif msg_text == "аура топ":
+            # Собираем всех, у кого баланс > 0
+            top_list = []
+            for u_id, data in USER_MESSAGES.items():
+                if data.get("balance", 0) > 0:
+                    top_list.append((data["name"], data["balance"], u_id))
+            
+            if not top_list:
+                await message.reply("Список богачей пока пуст.")
+                return
+            
+            top_list.sort(key=lambda x: x[1], reverse=True)
+            report = "🏆 <b>Топ богачей Ауры:</b>\n\n"
+            for i, (name, bal, u_id) in enumerate(top_list[:10], 1):
+                link = f'<a href="tg://user?id={u_id}">{name}</a>'
+                report += f"{i}. {link} — <b>{bal}</b> 💎\n"
+            await message.answer(report)
+
+        elif msg_text.startswith("аура риск"):
+            u_data = USER_MESSAGES[uid]
+            try:
+                bet = int(msg_text.split()[2])
+            except:
+                await message.reply("Пиши: <code>Аура риск [сумма]</code>")
+                return
+
+            if bet <= 0:
+                await message.reply("Ставка должна быть больше 0!")
+                return
+            if bet > u_data.get("balance", 0):
+                await message.reply("У тебя нет столько 💎!")
+                return
+
+            # Логика коэффициентов
+            # Шансы: -2x(5%), -1.5x(15%), 0x(30%), +1.5x(25%), +2x(20%), +3x(5%)
+            dice = random.random()
+            if dice < 0.05:
+                mult, res_text = -2, "КРИТ ПРОВАЛ! Ты потерял ставку в двойном размере! 💀"
+            elif dice < 0.20:
+                mult, res_text = -1.5, "Неудачный риск! Потерял 1.5x от ставки. 📉"
+            elif dice < 0.50:
+                mult, res_text = 0, "Ничего не изменилось. Аура стабильна. ⚖️"
+            elif dice < 0.75:
+                mult, res_text = 0.5, "Хорошо! Твоя прибыль +0.5x ставки! 📈"
+            elif dice < 0.95:
+                mult, res_text = 1, "Удача! Ты удвоил ставку (+1x)! 💰"
+            else:
+                mult, res_text = 2, "ДЖЕКПОТ!!! Тройная прибыль (+2x)! 🔥"
+
+            change = int(bet * mult)
+            u_data["balance"] += change
+            # Не уходим в минус ниже нуля
+            if u_data["balance"] < 0: u_data["balance"] = 0
+            
+            asyncio.to_thread(save_stats, USER_MESSAGES)
+            await message.reply(f"{res_text}\nИзменение: <b>{'+' if change >= 0 else ''}{change}</b> 💎\nБаланс: <b>{u_data['balance']}</b>")
 
         elif "стата" in msg_text or "статистика" in msg_text:
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
@@ -311,12 +369,10 @@ async def main_group_handler(message: types.Message):
 
         elif "выбор" in msg_text:
             content = msg_text.replace("аура выбор", "").strip()
-            
             words = content.lower()
             if ("вилк" in words or "глаз" in words) and ("жоп" in words or "раз" in words):
                 await message.reply(random.choice(["Иди нахуй", "Иди нахуй с такими вопросами", "Пошел нахуй", "Еблан сука", "Может нахуй сходишь", "Тебя явно не спрашивали блять"]))
                 return
-
             if " или " in content:
                 repeated = check_repeat(message.chat.id, content)
                 if repeated: await message.reply(f"{random.choice(REPEAT_PHRASES)}<b>{repeated}</b>")
