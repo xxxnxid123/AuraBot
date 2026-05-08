@@ -302,7 +302,7 @@ async def main_group_handler(message: types.Message):
         else:
             response_text = f"{shame_phrase}\nУ тебя списано <b>{total_fine}</b> 💎"
         await message.reply(response_text)
-        await asyncio.to_thread(save_stats, USER_MESSAGES)
+        asyncio.to_thread(save_stats, USER_MESSAGES) # Без await для скорости
 
     # АВТО-ОБНАРУЖЕНИЕ TIKTOK
     tt_match = re.search(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+|http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.text)
@@ -325,9 +325,9 @@ async def main_group_handler(message: types.Message):
                 reward = random.randint(50, 450)
                 u_data["balance"] = u_data.get("balance", 0) + reward
                 u_data["last_farm"] = now
-                await asyncio.to_thread(save_stats, USER_MESSAGES)
                 status = get_status(u_data["balance"])
                 await message.reply(f"⛏ Ты нафармил <b>{reward}</b> 💎\nТвой баланс: <b>{u_data['balance']}</b>\nТвой статус: <b>{status}</b>")
+                asyncio.to_thread(save_stats, USER_MESSAGES) # Сохраняем после ответа
 
         elif msg_text == "аура баланс":
             balance = USER_MESSAGES[uid].get("balance", 0)
@@ -373,9 +373,9 @@ async def main_group_handler(message: types.Message):
                 USER_MESSAGES[recipient_id] = {"name": recipient_name, "times": [], "balance": 0, "last_farm": 0}
             USER_MESSAGES[uid]["balance"] -= amount
             USER_MESSAGES[recipient_id]["balance"] += amount
-            # ФИКС: Обязательно ждем завершения сохранения перед ответом
-            await asyncio.to_thread(save_stats, USER_MESSAGES)
+            # ФИКС: Сначала отвечаем, потом фоном сохраняем
             await message.reply(f"✅ Ты перевел <b>{amount}</b> 💎 пользователю <a href='tg://user?id={recipient_id}'>{recipient_name}</a>")
+            asyncio.to_thread(save_stats, USER_MESSAGES)
 
         elif msg_text.startswith("аура ставка"):
             if int(uid) in RISK_COOLDOWN and (now - RISK_COOLDOWN[int(uid)]) < 60:
@@ -417,8 +417,8 @@ async def main_group_handler(message: types.Message):
             u_data["balance"] += change
             if u_data["balance"] < 0: u_data["balance"] = 0
             RISK_COOLDOWN[int(uid)] = now
-            await asyncio.to_thread(save_stats, USER_MESSAGES)
             await message.reply(f"{res_text}\nИзменение: <b>{'+' if change >= 0 else ''}{change}</b> 💎\nБаланс: <b>{u_data['balance']}</b>")
+            asyncio.to_thread(save_stats, USER_MESSAGES) # Сохраняем после ответа
             if is_lose:
                 await asyncio.sleep(1)
                 await message.answer(random.choice(LOSE_TROLL_PHRASES))
