@@ -302,7 +302,6 @@ async def main_group_handler(message: types.Message):
         else:
             response_text = f"{shame_phrase}\nУ тебя списано <b>{total_fine}</b> 💎"
         await message.reply(response_text)
-        # Сохраняем в таблицу при штрафах (важное событие)
         asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
     # АВТО-ОБНАРУЖЕНИЕ TIKTOK
@@ -383,7 +382,17 @@ async def main_group_handler(message: types.Message):
                 passed = now - RISK_COOLDOWN[uid_int]
                 if passed < 60:
                     remaining = int(60 - passed)
-                    await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{remaining} сек.</b>")
+                    wait_bet_msg = await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту.\nПосиди еще: <b>{remaining} сек.</b>")
+                    # ОПТИМИЗИРОВАННЫЙ ЦИКЛ ОТСЧЕТА (ПО 5 СЕК И ПО 1 СЕК)
+                    for r_sec in range(remaining - 1, -1, -1):
+                        await asyncio.sleep(1)
+                        try:
+                            if r_sec == 0:
+                                await wait_bet_msg.edit_text("✅ Кулдаун прошел! Можно ставить снова.")
+                                break
+                            elif r_sec <= 5 or r_sec % 5 == 0:
+                                await wait_bet_msg.edit_text(f"⏳ Не так часто! Бурмалдить можно раз в минуту.\nПосиди еще: <b>{r_sec} сек.</b>")
+                        except: break
                     return
 
             u_data = USER_MESSAGES[uid]
@@ -536,13 +545,12 @@ async def main_group_handler(message: types.Message):
                 res = random.choice(AURA_VALUES)
                 
                 wait_msg = await message.reply(f"🔮 Анализирую твою ауру... Подожди <b>10 сек.</b>")
-                # Для 10 секунд - обновляем каждые 2 сек до 4-х, потом каждую секунду (защита 429)
                 for r in range(9, -1, -1):
                     await asyncio.sleep(1)
                     if r == 0:
                         try: await wait_msg.edit_text(f"💎 Твоя аура: <b>{res}</b>")
                         except: await message.answer(f"💎 Твоя аура: <b>{res}</b>")
-                    elif r <= 5 or r % 2 == 0: # Обновляем чаще в конце или раз в 2 сек в начале
+                    elif r <= 5 or r % 2 == 0:
                         try: await wait_msg.edit_text(f"🔮 Анализирую твою ауру... Подожди <b>{r} сек.</b>")
                         except: break
             
@@ -576,7 +584,6 @@ async def main_group_handler(message: types.Message):
                         if s == 0:
                             await msg.edit_text("🔔 Время вышло!")
                             await message.answer(f"🔔 {message.from_user.mention_html()}, время вышло!")
-                        # ЛОГИКА 429: Редактируем раз в 5 сек, если > 10. Если <= 10, то каждую секунду.
                         elif s <= 10 or s % 5 == 0:
                             await msg.edit_text(f"⏳ Осталось: <b>{s} сек.</b>")
                     except: break 
