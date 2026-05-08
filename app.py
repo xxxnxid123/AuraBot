@@ -110,7 +110,7 @@ AURA_VALUES = [
     67, 34, 69, 89, 322, 42, 52, 82, 1488, 228, 
     "пульсирует синим", "позорище, у тебя нет ауры", "пронырливая", "скудная", "невероятная", "бесконечная",
     "получил(а) много ауры незаконным путем", "грязная", "чистая", "выронил ауру", "украл чужую ауру", 
-    "пожертвовал свою ауру нуждающимся", "взял микрозайм на ауру", "отбывает срок за кражу ауры", "черная"
+    "пожертвовал свою ауру нуждающимся", "взял микрозайм на ауру", "отбывает срок за кражу ауры"
 ]
 
 SELF_AURA_VALUES = ["Абсолютная", "Ослепительная. Не смотри на меня", "Бесконечная конечно", "Выиграла вашу ауру в казино", "Живу на проценты с вашей ауры", "Отмыла всю грязную ауру", "Пожертвовала ауру нуждающимся"]
@@ -133,6 +133,20 @@ SHAME_VARIATIONS = [
     "Твои слова пахнут плохо. Давай без этого в моем присутствии."
 ]
 
+# Фразы при проигрыше в казино
+LOSE_TROLL_PHRASES = [
+    "не играйте в казино пацаны",
+    "ахахахахах",
+    "хахаххахха",
+    "мдааа, минус аура",
+    "лох это судьба",
+    "казино всегда побеждает, когда вы поймете",
+    "кто-то сегодня остался без обеда",
+    "зато админ стал богаче, спасибо",
+    "ну ты выдал конечно",
+    "кринжанул знатно с такой ставки"
+]
+
 # --- ФИЛЬТРЫ ---
 is_allowed_user = F.from_user.id.in_(ALLOWED_USERS)
 is_allowed_group = F.chat.id.in_(ALLOWED_GROUPS)
@@ -144,7 +158,8 @@ HELP_TEXT = (
     "⛏ <code>Аура фарм</code> - заработать 💎\n"
     "💰 <code>Аура баланс</code> - твой счет\n"
     "🏆 <code>Аура топ</code> - богачи чата\n"
-    "🔥 <code>Аура риск [ставка]</code> - испытать удачу\n\n"
+    "🔥 <code>Аура риск [ставка]</code> - казино\n"
+    "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n\n"
     "<b>Доступные команды:</b>\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
     "🎱 <code>Аура да нет [вопрос]</code>\n"
@@ -152,13 +167,12 @@ HELP_TEXT = (
     "📊 <code>Аура стата [час/сутки/неделя/месяц]</code>\n"
     "💬 <code>Аура фраза</code> - выдать базу\n"
     "🍀 <code>Аура удача</code>\n"
-    "🎲 <code>Аура кости</code>\n"
-    "🎲 <code>Аура кости пара</code>\n"
+    "🎲 <code>Аура кости / кости пара</code>\n"
     "🔢 <code>Аура число [от] [до]</code>\n"
     "⏳ <code>Аура таймер [сек]</code>\n"
-    "💎 <code>Аура аура [текст]</code> - узнать свою ауру\n"
+    "💎 <code>Аура аура [текст]</code> - узнать ауру\n"
     "📢 <code>Аура сбор</code> - общий сбор\n"
-    "📜 <code>Аура команды</code> - показать это меню\n\n"
+    "📜 <code>Аура команды</code> - меню\n\n"
     "📩 <b>Личные сообщения:</b>\n"
     "🔐 <code>/msg [текст]</code> - анонимка в чат"
 )
@@ -256,7 +270,6 @@ async def main_group_handler(message: types.Message):
             await message.reply(f"💰 Твой баланс: <b>{balance}</b> 💎\nТвой статус: <b>{status}</b>")
 
         elif msg_text == "аура топ":
-            # Собираем всех, у кого баланс > 0
             top_list = []
             for u_id, data in USER_MESSAGES.items():
                 if data.get("balance", 0) > 0:
@@ -273,6 +286,40 @@ async def main_group_handler(message: types.Message):
                 report += f"{i}. {link} — <b>{bal}</b> 💎\n"
             await message.answer(report)
 
+        elif msg_text.startswith("аура перевод"):
+            if not message.reply_to_message:
+                await message.reply("Эту команду нужно писать ответом на сообщение того, кому хочешь перевести 💎")
+                return
+            
+            try:
+                amount = int(msg_text.split()[2])
+            except:
+                await message.reply("Пиши: <code>Аура перевод [сумма]</code> (ответом на сообщение)")
+                return
+
+            recipient_id = str(message.reply_to_message.from_user.id)
+            recipient_name = message.reply_to_message.from_user.first_name
+
+            if amount <= 0:
+                await message.reply("Сумма должна быть больше 0!")
+                return
+            if USER_MESSAGES[uid].get("balance", 0) < amount:
+                await message.reply("У тебя не хватает 💎 для перевода!")
+                return
+
+            if uid == recipient_id:
+                await message.reply("Переводить самому себе? Гениально.")
+                return
+
+            if recipient_id not in USER_MESSAGES:
+                USER_MESSAGES[recipient_id] = {"name": recipient_name, "times": [], "balance": 0, "last_farm": 0}
+
+            USER_MESSAGES[uid]["balance"] -= amount
+            USER_MESSAGES[recipient_id]["balance"] += amount
+            
+            asyncio.to_thread(save_stats, USER_MESSAGES)
+            await message.reply(f"✅ Ты перевел <b>{amount}</b> 💎 пользователю <a href='tg://user?id={recipient_id}'>{recipient_name}</a>")
+
         elif msg_text.startswith("аура риск"):
             u_data = USER_MESSAGES[uid]
             try:
@@ -288,13 +335,14 @@ async def main_group_handler(message: types.Message):
                 await message.reply("У тебя нет столько 💎!")
                 return
 
-            # Логика коэффициентов
-            # Шансы: -2x(5%), -1.5x(15%), 0x(30%), +1.5x(25%), +2x(20%), +3x(5%)
             dice = random.random()
+            is_lose = False
             if dice < 0.05:
                 mult, res_text = -2, "КРИТ ПРОВАЛ! Ты потерял ставку в двойном размере! 💀"
+                is_lose = True
             elif dice < 0.20:
                 mult, res_text = -1.5, "Неудачный риск! Потерял 1.5x от ставки. 📉"
+                is_lose = True
             elif dice < 0.50:
                 mult, res_text = 0, "Ничего не изменилось. Аура стабильна. ⚖️"
             elif dice < 0.75:
@@ -306,11 +354,14 @@ async def main_group_handler(message: types.Message):
 
             change = int(bet * mult)
             u_data["balance"] += change
-            # Не уходим в минус ниже нуля
             if u_data["balance"] < 0: u_data["balance"] = 0
             
             asyncio.to_thread(save_stats, USER_MESSAGES)
             await message.reply(f"{res_text}\nИзменение: <b>{'+' if change >= 0 else ''}{change}</b> 💎\nБаланс: <b>{u_data['balance']}</b>")
+            
+            if is_lose:
+                await asyncio.sleep(1)
+                await message.answer(random.choice(LOSE_TROLL_PHRASES))
 
         elif "стата" in msg_text or "статистика" in msg_text:
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
