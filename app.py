@@ -288,6 +288,18 @@ async def main_group_handler(message: types.Message):
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
 
+    # --- ФИЛЬТР МАТА (В НАЧАЛЕ) ---
+    bad_pattern = r"(?:^|[^а-яё])(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо)[а-яё]*"
+    matches = re.findall(bad_pattern, msg_text)
+    
+    if matches:
+        count = len(matches)
+        fine = count * 5
+        USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - fine)
+        asyncio.to_thread(save_stats, USER_MESSAGES)
+        if random.random() < 0.25:
+            await message.reply(f"{random.choice(SHAME_VARIATIONS)}\nУ тебя списано <b>{fine}</b> 💎")
+
     # АВТО-ОБНАРУЖЕНИЕ TIKTOK
     tt_match = re.search(r'http(?:s)?://(?:www\.)?v(?:t|m)\.tiktok\.com/\S+|http(?:s)?://(?:www\.)?tiktok\.com/\S+', message.text)
     if tt_match and not msg_text.startswith("аура"):
@@ -296,7 +308,8 @@ async def main_group_handler(message: types.Message):
         await message.reply(random.choice(TT_OFFER_TEXTS), reply_markup=kb)
 
     if msg_text.startswith("аура"):
-        if int(uid) not in ALLOWED_USERS: return
+        if int(uid) not in ALLOWED_USERS:
+            return
 
         if msg_text == "аура фарм":
             u_data = USER_MESSAGES[uid]
@@ -537,29 +550,21 @@ async def main_group_handler(message: types.Message):
         elif "таймер" in msg_text:
             try:
                 sec = int(msg_text.split()[2])
+                if sec > 300: 
+                    await message.reply("Максимум 300 секунд!")
+                    return
                 msg = await message.reply(f"⏳ Таймер запущен: <b>{sec} сек.</b>")
-                for s in range(sec, 0, -5 if sec > 10 else -1):
-                    await asyncio.sleep(5 if sec > 10 else 1)
-                    try: await msg.edit_text(f"⏳ Осталось: <b>{max(0, s-5 if sec > 10 else s-1)} сек.</b>")
-                    except: break
+                for s in range(sec - 1, -1, -1):
+                    await asyncio.sleep(1)
+                    try: await msg.edit_text(f"⏳ Осталось: <b>{s} сек.</b>")
+                    except: break 
                 await message.answer(f"🔔 {message.from_user.mention_html()}, время вышло!")
-            except: await message.reply("Пиши: <code>Аура таймер [время в сек]</code>")
+            except: 
+                await message.reply("Пиши: <code>Аура таймер [время в сек]</code>")
+
         elif "кости пара" in msg_text: await message.reply(f"🎲 Выпало: <b>{random.randint(1, 6)}</b> и <b>{random.randint(1, 6)}</b>")
         elif "кости" in msg_text: await message.reply(f"🎲 Число: <b>{random.randint(1, 6)}</b>")
         return
-
-    # --- ФИЛЬТР МАТА С УМНЫМ ПОИСКОМ И ШТРАФОМ ---
-    bad_pattern = r"(^|[^а-яё])(хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо)[а-яё]*"
-    matches = re.findall(bad_pattern, msg_text)
-    
-    if matches:
-        count = len(matches)
-        fine = count * 5
-        USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - fine)
-        asyncio.to_thread(save_stats, USER_MESSAGES)
-        
-        if random.random() < 0.25:
-            await message.reply(f"{random.choice(SHAME_VARIATIONS)}\nСписано: <b>-{fine}</b> аур за мат.")
 
 @dp.message(is_private_chat, is_allowed_user, F.text.startswith("/msg "))
 async def aura_anon_message(message: types.Message):
