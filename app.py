@@ -379,11 +379,20 @@ async def main_group_handler(message: types.Message):
 
         elif msg_text.startswith("аура ставка"):
             if int(uid) in RISK_COOLDOWN and (now - RISK_COOLDOWN[int(uid)]) < 60:
-                msg = await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту.")
-                for r in range(int(60 - (now - RISK_COOLDOWN[int(uid)])), 0, -5):
-                    await asyncio.sleep(5)
-                    try: await msg.edit_text(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{r} сек.</b>")
-                    except: break
+                # Считаем, сколько реально осталось ждать
+                remaining = int(60 - (now - RISK_COOLDOWN[int(uid)]))
+                msg = await message.reply(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{remaining} сек.</b>")
+                
+                # Цикл обновления: от текущего остатка до 0 с шагом -1 (каждую секунду)
+                for r in range(remaining - 1, -1, -1):
+                    await asyncio.sleep(1) # Ждем ровно 1 секунду
+                    try:
+                        if r > 0:
+                            await msg.edit_text(f"⏳ Не так часто! Бурмалдить можно раз в минуту. Посиди еще <b>{r} сек.</b>")
+                        else:
+                            await msg.edit_text("✨ Можно бурмалдить!")
+                    except:
+                        break # Если пользователь удалил сообщение, выходим из цикла
                 return
             u_data = USER_MESSAGES[uid]
             try:
