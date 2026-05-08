@@ -2,3 +2,4 @@ aiogram
 aiohttp
 gspread
 oauth2client
+yt-dlp
