@@ -584,7 +584,7 @@ async def main_group_handler(message: types.Message):
                     text = await asyncio.to_thread(recognizer.recognize_google, audio_data, language="ru-RU")
 
                 if text:
-                    res = f"📝 <b>Текст голосового:</b>\n«{text}»"
+                    res = f"📝 <b>Текст голосового:</b>\n{text}"
                     matches_gs = re.findall(bad_pattern, text.lower())
                     if matches_gs:
                         if v_uid not in USER_MESSAGES:
