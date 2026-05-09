@@ -333,7 +333,7 @@ async def cb_transcribe_voice(callback: types.CallbackQuery):
             await wait_msg.edit_text("🛰 Не смогла разобрать ни слова.")
     except Exception as e:
         print(f"ГС ошибка: {e}")
-        await wait_msg.edit_text("❌ Ошибка расшифровки. Проверь наличие ffmpeg.")
+        await wait_msg.edit_text("❌ Ошибка расшифровки.")
     finally:
         if os.path.exists(ogg_p): os.remove(ogg_p)
         if os.path.exists(wav_p): os.remove(wav_p)
