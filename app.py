@@ -297,12 +297,8 @@ async def cb_transcribe_voice(callback: types.CallbackQuery):
         await callback.answer("❌ ГС не найдено или оно было удалено.", show_alert=True)
         return
     
-    # Имитируем команду "аура гс" для того же сообщения
-    # Вызываем логику напрямую или через создание искусственного сообщения
     await callback.answer("Аура начинает слушать...")
     
-    # Важное примечание: логика обработки ниже в основном обработчике дублируется, 
-    # чтобы не менять структуру, вызываем расшифровку вручную здесь
     voice = callback.message.reply_to_message.voice
     v_uid = str(callback.message.reply_to_message.from_user.id)
     wait_msg = await callback.message.edit_text("📡 Аура прислушивается...")
@@ -319,7 +315,7 @@ async def cb_transcribe_voice(callback: types.CallbackQuery):
             text = await asyncio.to_thread(recognizer.recognize_google, audio_data, language="ru-RU")
 
         if text:
-            res = f"📝 <b>Текст голосового:</b>\n{text}"
+            res = f"📝 <b>Текст голосового:</b>\n«{text}»"
             matches_gs = re.findall(bad_pattern, text.lower())
             if matches_gs:
                 if v_uid not in USER_MESSAGES:
@@ -329,11 +325,11 @@ async def cb_transcribe_voice(callback: types.CallbackQuery):
                 res += f"\n\n🤫 <b>Аура всё слышит!</b> Автор оштрафован на <b>{fine_gs}</b> 💎"
                 asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
             await wait_msg.edit_text(res)
-        else:
-            await wait_msg.edit_text("🛰 Не смогла разобрать ни слова.")
+    except sr.UnknownValueError:
+        await wait_msg.edit_text("🛰 Не смогла разобрать ни слова")
     except Exception as e:
         print(f"ГС ошибка: {e}")
-        await wait_msg.edit_text("❌ Ошибка расшифровки.")
+        await wait_msg.edit_text("❌ Ошибка расшифровки")
     finally:
         if os.path.exists(ogg_p): os.remove(ogg_p)
         if os.path.exists(wav_p): os.remove(wav_p)
@@ -581,35 +577,29 @@ async def main_group_handler(message: types.Message):
             try:
                 file = await bot.get_file(voice.file_id)
                 await bot.download_file(file.file_path, ogg_p)
-
                 audio = AudioSegment.from_ogg(ogg_p)
                 audio.export(wav_p, format="wav")
-
                 with sr.AudioFile(wav_p) as source:
                     audio_data = recognizer.record(source)
-                    # Фикс лагов: выносим распознавание в поток
                     text = await asyncio.to_thread(recognizer.recognize_google, audio_data, language="ru-RU")
 
                 if text:
-                    res = f"📝 <b>Текст голосового:</b>\n\n«{text}»"
+                    res = f"📝 <b>Текст голосового:</b>\n«{text}»"
                     matches_gs = re.findall(bad_pattern, text.lower())
                     if matches_gs:
-                        # Фикс вылета: проверяем юзера в базе перед штрафом
                         if v_uid not in USER_MESSAGES:
                             USER_MESSAGES[v_uid] = {"name": message.reply_to_message.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
-                        
                         fine_gs = len(matches_gs) * 10
                         USER_MESSAGES[v_uid]["balance"] = max(0, USER_MESSAGES[v_uid].get("balance", 0) - fine_gs)
                         res += f"\n\n🤫 <b>Аура всё слышит!</b> Автор оштрафован на <b>{fine_gs}</b> 💎"
                         asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
                     await wait_msg.edit_text(res)
-                else:
-                    await wait_msg.edit_text("🛰 Не смогла разобрать ни слова.")
+            except sr.UnknownValueError:
+                await wait_msg.edit_text("🛰 Не смогла разобрать ни слова.")
             except Exception as e:
                 print(f"ГС ошибка: {e}")
                 await wait_msg.edit_text("❌ Ошибка расшифровки. Проверь наличие ffmpeg.")
             finally:
-                # Гарантированное удаление мусора
                 if os.path.exists(ogg_p): os.remove(ogg_p)
                 if os.path.exists(wav_p): os.remove(wav_p)
 
