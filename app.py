@@ -25,6 +25,7 @@ from pydub import AudioSegment
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
+AURA_ID = "8637150963"
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
@@ -165,7 +166,6 @@ TT_OFFER_TEXTS = [
     "Аура подсказывает, что этот видос надо сохранить. Качаем?"
 ]
 
-# Варианты предложений расшифровать ГС
 VOICE_OFFER_TEXTS = [
     "🎙️ Вижу ГС! Если лень слушать, просто нажми на кнопку ниже или напиши: <code>Аура гс</code>",
     "🎤 О, голосовое! Могу перевести в текст, если не хочешь слушать.",
@@ -174,13 +174,28 @@ VOICE_OFFER_TEXTS = [
     "📝 Вижу голос. Если лень слушать, Аура может вслушаться за тебя."
 ]
 
-# Варианты предложений для КРУЖКОВ
 VIDEO_OFFER_TEXTS = [
     "🎬 О, кружочек! Могу вытащить текст из видео, если лень смотреть.",
     "📸 Вижу видео-сообщение. Расшифровать, что там говорят?",
     "📹 Кружок! Аура может перевести это в текст.",
     "👁️‍🗨️ Вижу кружок! Нажми на кнопку ниже, и я распишу всё текстом.",
     "🤔 Кружок? Интересно. Могу расшифровать звук из него."
+]
+
+SELF_FINE_ANSWERS = [
+    "Решил заняться самобичеванием?",
+    "Ого, мазохизм в чате. Списала с тебя по красоте.",
+    "Штраф самому себе - это мощно. Аура забирает твой взнос.",
+    "Справедливо. Если косячить, то до конца. Минус баланс.",
+    "Твои 💎 ушли мне. Люблю такую самокритику."
+]
+
+FINE_AURA_ANSWERS = [
+    "Попытка оштрафовать высшие силы провалилась. ⚡",
+    "Ты че, бессмертный? Сама тебя сейчас оштрафую.",
+    "Моя аура слишком мощная для твоих штрафов. Отдыхай.",
+    "Штрафовать меня? Смешно.",
+    "Невозможно забрать деньги у того, кто их печатает."
 ]
 
 # --- ФИЛЬТРЫ ---
@@ -257,7 +272,6 @@ def download_tiktok(url):
         print(f"Ошибка скачивания ТТ: {e}")
         return None
 
-# --- ФУНКЦИИ НЕЗАВИСИМЫХ ТАЙМЕРОВ ---
 async def run_independent_timer(msg, initial_sec, user_mention):
     for s in range(initial_sec - 1, -1, -1):
         await asyncio.sleep(1)
@@ -300,7 +314,6 @@ async def cb_download_tt(callback: types.CallbackQuery):
     else:
         await wait_msg.edit_text("❌ Не удалось скачать видео. Возможно, оно приватное или ссылка битая.")
 
-# Колбэк для кнопки расшифровки ГС / Кружка
 @dp.callback_query(F.data == "transcribe_voice")
 async def cb_transcribe_voice(callback: types.CallbackQuery):
     target_msg = callback.message.reply_to_message
@@ -363,7 +376,6 @@ async def goodbye_member(message: types.Message):
         text = random.choice(LEAVE_VARIATIONS).format(name=name)
     await message.answer(text)
 
-# --- ОБРАБОТКА ГОЛОСОВЫХ И КРУЖКОВ (С ПОДСКАЗКОЙ) ---
 @dp.message(is_allowed_group, F.voice)
 async def voice_hint_handler(message: types.Message):
     if random.random() < 0.10: # Шанс 10%
@@ -382,11 +394,15 @@ async def main_group_handler(message: types.Message):
     uid = str(message.from_user.id)
     uname = message.from_user.first_name
     now = time.time()
+    bot_id = AURA_ID
 
     if uid not in USER_MESSAGES:
         USER_MESSAGES[uid] = {"name": uname, "times": [], "balance": 0, "last_farm": 0}
     USER_MESSAGES[uid]["times"].append(now)
     USER_MESSAGES[uid]["name"] = uname
+
+    if bot_id not in USER_MESSAGES:
+        USER_MESSAGES[bot_id] = {"name": "Казна Ауры", "times": [], "balance": 0, "last_farm": 0}
 
     bad_pattern = r"(?i)\b(?:а|о|вы|по|на|при|у|ни)?(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо|хуе|хуя)[а-яё]*"
     matches = re.findall(bad_pattern, msg_text)
@@ -394,12 +410,17 @@ async def main_group_handler(message: types.Message):
     if matches and not msg_text.startswith("аура"):
         count = len(matches)
         total_fine = count * 5
-        USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - total_fine)
+        current_bal = USER_MESSAGES[uid].get("balance", 0)
+        actual_fine = min(current_bal, total_fine)
+        
+        USER_MESSAGES[uid]["balance"] -= actual_fine
+        USER_MESSAGES[bot_id]["balance"] += actual_fine
+        
         shame_phrase = random.choice(SHAME_VARIATIONS)
         if count > 1:
-            response_text = f"{shame_phrase}\nПосчитала матов: <b>{count}</b> шт.\nИтого списано: <b>{total_fine}</b> 💎"
+            response_text = f"{shame_phrase}\nПосчитала матов: <b>{count}</b> шт.\nИтого в казну: <b>{actual_fine}</b> 💎"
         else:
-            response_text = f"{shame_phrase}\nУ тебя списано <b>{total_fine}</b> 💎"
+            response_text = f"{shame_phrase}\nВ казну Ауры ушло <b>{actual_fine}</b> 💎"
         await message.reply(response_text)
         asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
@@ -460,7 +481,6 @@ async def main_group_handler(message: types.Message):
             
             recipient_id = str(message.reply_to_message.from_user.id)
             recipient_name = message.reply_to_message.from_user.first_name
-            bot_id = str((await bot.get_me()).id)
 
             if amount <= 0:
                 await message.reply("Сумма должна быть больше 0!")
@@ -480,8 +500,6 @@ async def main_group_handler(message: types.Message):
             
             final_amount = amount - fee
 
-            if bot_id not in USER_MESSAGES:
-                USER_MESSAGES[bot_id] = {"name": "Казна Ауры", "times": [], "balance": 0, "last_farm": 0}
             if recipient_id not in USER_MESSAGES:
                 USER_MESSAGES[recipient_id] = {"name": recipient_name, "times": [], "balance": 0, "last_farm": 0}
 
@@ -499,9 +517,7 @@ async def main_group_handler(message: types.Message):
             await message.reply(report_msg)
             asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
-        # --- НОВАЯ КОМАНДА: АДМИН-ШТРАФ ---
         elif msg_text.startswith("аура штраф"):
-            # Проверяем, является ли отправитель админом чата
             member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
             if member.status not in ["administrator", "creator"]:
                 await message.reply("Куда мы лезем?")
@@ -514,9 +530,8 @@ async def main_group_handler(message: types.Message):
             target_user = message.reply_to_message.from_user
             t_uid = str(target_user.id)
             
-            # Нельзя штрафовать саму Ауру или Владельца (тебя)
-            if t_uid == "8637150963" or t_uid == "6009369839":
-                await message.reply("Попытка оштрафовать высшие силы провалилась. ⚡")
+            if t_uid == bot_id:
+                await message.reply(random.choice(FINE_AURA_ANSWERS))
                 return
 
             try:
@@ -532,8 +547,17 @@ async def main_group_handler(message: types.Message):
             if t_uid not in USER_MESSAGES:
                 USER_MESSAGES[t_uid] = {"name": target_user.first_name, "times": [], "balance": 0, "last_farm": 0}
             
-            USER_MESSAGES[t_uid]["balance"] = max(0, USER_MESSAGES[t_uid].get("balance", 0) - amount)
-            await message.reply(f"🚫 Админ-штраф! С баланса <a href='tg://user?id={t_uid}'>{target_user.first_name}</a> списано <b>{amount}</b> 💎")
+            current_target_bal = USER_MESSAGES[t_uid].get("balance", 0)
+            actual_fine = min(current_target_bal, amount)
+            
+            USER_MESSAGES[t_uid]["balance"] -= actual_fine
+            USER_MESSAGES[bot_id]["balance"] += actual_fine
+            
+            if t_uid == uid:
+                await message.reply(f"🚫 {random.choice(SELF_FINE_ANSWERS)}\nСписано <b>{actual_fine}</b> 💎")
+            else:
+                await message.reply(f"🚫 Админ-штраф! С баланса <a href='tg://user?id={t_uid}'>{target_user.first_name}</a> списано <b>{actual_fine}</b> 💎. Деньги ушли в казну.")
+            
             asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
         elif msg_text.startswith("аура ставка"):
@@ -607,7 +631,6 @@ async def main_group_handler(message: types.Message):
             else:
                 await wait_msg.edit_text("❌ Не удалось скачать видео.")
 
-        # --- ОБНОВЛЕННАЯ КОМАНДА: РАСШИФРОВКА БЕЗ ШТРАФОВ ---
         elif msg_text in ["аура гс", "аура поясни", "аура чё там"]:
             target_msg = message.reply_to_message
             if not target_msg or not (target_msg.voice or target_msg.video_note):
