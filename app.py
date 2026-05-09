@@ -165,6 +165,15 @@ TT_OFFER_TEXTS = [
     "Аура подсказывает, что этот видос надо сохранить. Качаем?"
 ]
 
+# Варианты предложений расшифровать ГС
+VOICE_OFFER_TEXTS = [
+    "🎙️ Вижу ГС! Если лень слушать, просто нажми на кнопку ниже или напиши: <code>Аура гс</code>",
+    "🎤 О, голосовое! Могу перевести в текст, если не хочешь слушать.",
+    "🛰️ Твои уши в безопасности. Расшифровать это голосовое?",
+    "🎧 Входящее ГС обнаружено. Желаете прочитать, а не слушать?",
+    "📝 Вижу голос. Если лень слушать, Аура может вслушаться за тебя."
+]
+
 # --- ФИЛЬТРЫ ---
 is_allowed_user = F.from_user.id.in_(ALLOWED_USERS)
 is_allowed_group = F.chat.id.in_(ALLOWED_GROUPS)
@@ -281,6 +290,54 @@ async def cb_download_tt(callback: types.CallbackQuery):
     else:
         await wait_msg.edit_text("❌ Не удалось скачать видео. Возможно, оно приватное или ссылка битая.")
 
+# Колбэк для кнопки расшифровки ГС
+@dp.callback_query(F.data == "transcribe_voice")
+async def cb_transcribe_voice(callback: types.CallbackQuery):
+    if not callback.message.reply_to_message or not callback.message.reply_to_message.voice:
+        await callback.answer("❌ ГС не найдено или оно было удалено.", show_alert=True)
+        return
+    
+    # Имитируем команду "аура гс" для того же сообщения
+    # Вызываем логику напрямую или через создание искусственного сообщения
+    await callback.answer("Аура начинает слушать...")
+    
+    # Важное примечание: логика обработки ниже в основном обработчике дублируется, 
+    # чтобы не менять структуру, вызываем расшифровку вручную здесь
+    voice = callback.message.reply_to_message.voice
+    v_uid = str(callback.message.reply_to_message.from_user.id)
+    wait_msg = await callback.message.edit_text("📡 Аура прислушивается...")
+    ogg_p, wav_p = f"{voice.file_id}.ogg", f"{voice.file_id}.wav"
+    bad_pattern = r"(?i)\b(?:а|о|вы|по|на|при|у|ни)?(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо|хуе|хуя)[а-яё]*"
+
+    try:
+        file = await bot.get_file(voice.file_id)
+        await bot.download_file(file.file_path, ogg_p)
+        audio = AudioSegment.from_ogg(ogg_p)
+        audio.export(wav_p, format="wav")
+        with sr.AudioFile(wav_p) as source:
+            audio_data = recognizer.record(source)
+            text = await asyncio.to_thread(recognizer.recognize_google, audio_data, language="ru-RU")
+
+        if text:
+            res = f"📝 <b>Текст голосового:</b>\n\n«{text}»"
+            matches_gs = re.findall(bad_pattern, text.lower())
+            if matches_gs:
+                if v_uid not in USER_MESSAGES:
+                    USER_MESSAGES[v_uid] = {"name": callback.message.reply_to_message.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
+                fine_gs = len(matches_gs) * 10
+                USER_MESSAGES[v_uid]["balance"] = max(0, USER_MESSAGES[v_uid].get("balance", 0) - fine_gs)
+                res += f"\n\n🤫 <b>Аура всё слышит!</b> Автор оштрафован на <b>{fine_gs}</b> 💎"
+                asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
+            await wait_msg.edit_text(res)
+        else:
+            await wait_msg.edit_text("🛰 Не смогла разобрать ни слова.")
+    except Exception as e:
+        print(f"ГС ошибка: {e}")
+        await wait_msg.edit_text("❌ Ошибка расшифровки. Проверь наличие ffmpeg.")
+    finally:
+        if os.path.exists(ogg_p): os.remove(ogg_p)
+        if os.path.exists(wav_p): os.remove(wav_p)
+
 @dp.message(F.new_chat_members)
 async def welcome_new_member(message: types.Message):
     today = time.strftime("%Y-%m-%d")
@@ -309,11 +366,12 @@ async def goodbye_member(message: types.Message):
         text = random.choice(LEAVE_VARIATIONS).format(name=name)
     await message.answer(text)
 
-# --- ОБРАБОТКА ГОЛОСОВЫХ (РЕДКИЙ ХИНТ) ---
+# --- ОБРАБОТКА ГОЛОСОВЫХ (С ВАРИАНТАМИ И КНОПКОЙ) ---
 @dp.message(is_allowed_group, F.voice)
 async def voice_hint_handler(message: types.Message):
     if random.random() < 0.10: # Шанс 10%
-        await message.reply("🤖 Вижу ГС! Если лень слушать, напиши в ответ: <code>Аура гс</code>")
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎤 Расшифровать", callback_data="transcribe_voice")]])
+        await message.reply(random.choice(VOICE_OFFER_TEXTS), reply_markup=kb)
 
 @dp.message(is_allowed_group, F.text)
 async def main_group_handler(message: types.Message):
@@ -517,7 +575,7 @@ async def main_group_handler(message: types.Message):
 
             voice = message.reply_to_message.voice
             v_uid = str(message.reply_to_message.from_user.id)
-            wait_msg = await message.reply("📡 <i>Аура вслушивается в голос...</i>")
+            wait_msg = await message.reply("📡 Аура прислушивается...")
             ogg_p, wav_p = f"{voice.file_id}.ogg", f"{voice.file_id}.wav"
 
             try:
@@ -533,7 +591,7 @@ async def main_group_handler(message: types.Message):
                     text = await asyncio.to_thread(recognizer.recognize_google, audio_data, language="ru-RU")
 
                 if text:
-                    res = f"📝 <b>Текст ГС:</b>\n\n«{text}»"
+                    res = f"📝 <b>Текст голосового:</b>\n\n«{text}»"
                     matches_gs = re.findall(bad_pattern, text.lower())
                     if matches_gs:
                         # Фикс вылета: проверяем юзера в базе перед штрафом
