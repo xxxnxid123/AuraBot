@@ -174,6 +174,15 @@ VOICE_OFFER_TEXTS = [
     "📝 Вижу голос. Если лень слушать, Аура может вслушаться за тебя."
 ]
 
+# Варианты предложений для КРУЖКОВ
+VIDEO_OFFER_TEXTS = [
+    "🎬 О, кружочек! Могу вытащить текст из видео, если лень смотреть.",
+    "📸 Вижу видео-сообщение. Расшифровать, что там говорят?",
+    "📹 Кружок! Аура может перевести это в текст.",
+    "👁️‍🗨️ Вижу кружок! Нажми на кнопку ниже, и я распишу всё текстом.",
+    "🤔 Кружок? Интересно. Могу расшифровать звук из него."
+]
+
 # --- ФИЛЬТРЫ ---
 is_allowed_user = F.from_user.id.in_(ALLOWED_USERS)
 is_allowed_group = F.chat.id.in_(ALLOWED_GROUPS)
@@ -189,7 +198,7 @@ HELP_TEXT = (
     "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n\n"
     "<b>Доступные команды:</b>\n"
     "🎬 <code>Аура тт</code> - скачать видео (в ответ на ссылку)\n"
-    "🎤 <code>Аура гс</code> - расшифровать ГС (в ответ на ГС)\n"
+    "🎤 <code>Аура гс</code> - расшифровать ГС или кружок\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
     "🎱 <code>Аура да нет [вопрос]</code>\n"
     "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
@@ -247,7 +256,7 @@ def download_tiktok(url):
         print(f"Ошибка скачивания ТТ: {e}")
         return None
 
-# --- ФУНКЦИИ НЕЗАВИСИМЫХ ТАЙМЕРОВ (ОПТИМИЗИРОВАННЫЕ) ---
+# --- ФУНКЦИИ НЕЗАВИСИМЫХ ТАЙМЕРОВ ---
 async def run_independent_timer(msg, initial_sec, user_mention):
     for s in range(initial_sec - 1, -1, -1):
         await asyncio.sleep(1)
@@ -290,36 +299,37 @@ async def cb_download_tt(callback: types.CallbackQuery):
     else:
         await wait_msg.edit_text("❌ Не удалось скачать видео. Возможно, оно приватное или ссылка битая.")
 
-# Колбэк для кнопки расшифровки ГС
+# Колбэк для кнопки расшифровки ГС / Кружка
 @dp.callback_query(F.data == "transcribe_voice")
 async def cb_transcribe_voice(callback: types.CallbackQuery):
-    if not callback.message.reply_to_message or not callback.message.reply_to_message.voice:
-        await callback.answer("❌ ГС не найдено или оно было удалено.", show_alert=True)
+    target_msg = callback.message.reply_to_message
+    if not target_msg or not (target_msg.voice or target_msg.video_note):
+        await callback.answer("❌ Медиафайл не найден или был удален.", show_alert=True)
         return
     
     await callback.answer("Аура начинает слушать...")
     
-    voice = callback.message.reply_to_message.voice
-    v_uid = str(callback.message.reply_to_message.from_user.id)
+    media = target_msg.voice if target_msg.voice else target_msg.video_note
+    v_uid = str(target_msg.from_user.id)
     wait_msg = await callback.message.edit_text("📡 Аура прислушивается...")
-    ogg_p, wav_p = f"{voice.file_id}.ogg", f"{voice.file_id}.wav"
+    ogg_p, wav_p = f"{media.file_id}.ogg", f"{media.file_id}.wav"
     bad_pattern = r"(?i)\b(?:а|о|вы|по|на|при|у|ни)?(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо|хуе|хуя)[а-яё]*"
 
     try:
-        file = await bot.get_file(voice.file_id)
+        file = await bot.get_file(media.file_id)
         await bot.download_file(file.file_path, ogg_p)
-        audio = AudioSegment.from_ogg(ogg_p)
+        audio = AudioSegment.from_file(ogg_p)
         audio.export(wav_p, format="wav")
         with sr.AudioFile(wav_p) as source:
             audio_data = recognizer.record(source)
             text = await asyncio.to_thread(recognizer.recognize_google, audio_data, language="ru-RU")
 
         if text:
-            res = f"📝 <b>Текст голосового:</b>\n{text}"
+            res = f"📝 <b>Текст расшифровки:</b>\n{text}"
             matches_gs = re.findall(bad_pattern, text.lower())
             if matches_gs:
                 if v_uid not in USER_MESSAGES:
-                    USER_MESSAGES[v_uid] = {"name": callback.message.reply_to_message.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
+                    USER_MESSAGES[v_uid] = {"name": target_msg.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
                 fine_gs = len(matches_gs) * 10
                 USER_MESSAGES[v_uid]["balance"] = max(0, USER_MESSAGES[v_uid].get("balance", 0) - fine_gs)
                 res += f"\n\n🤫 <b>Аура всё слышит!</b> Автор оштрафован на <b>{fine_gs}</b> 💎"
@@ -328,7 +338,7 @@ async def cb_transcribe_voice(callback: types.CallbackQuery):
     except sr.UnknownValueError:
         await wait_msg.edit_text("🛰 Не смогла разобрать ни слова")
     except Exception as e:
-        print(f"ГС ошибка: {e}")
+        print(f"Ошибка расшифровки: {e}")
         await wait_msg.edit_text("❌ Ошибка расшифровки")
     finally:
         if os.path.exists(ogg_p): os.remove(ogg_p)
@@ -362,12 +372,18 @@ async def goodbye_member(message: types.Message):
         text = random.choice(LEAVE_VARIATIONS).format(name=name)
     await message.answer(text)
 
-# --- ОБРАБОТКА ГОЛОСОВЫХ (С ВАРИАНТАМИ И КНОПКОЙ) ---
+# --- ОБРАБОТКА ГОЛОСОВЫХ И КРУЖКОВ (С ПОДСКАЗКОЙ) ---
 @dp.message(is_allowed_group, F.voice)
 async def voice_hint_handler(message: types.Message):
     if random.random() < 0.10: # Шанс 10%
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎤 Расшифровать", callback_data="transcribe_voice")]])
         await message.reply(random.choice(VOICE_OFFER_TEXTS), reply_markup=kb)
+
+@dp.message(is_allowed_group, F.video_note)
+async def video_note_hint_handler(message: types.Message):
+    if random.random() < 0.10: # Шанс 10%
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎬 Расшифровать", callback_data="transcribe_voice")]])
+        await message.reply(random.choice(VIDEO_OFFER_TEXTS), reply_markup=kb)
 
 @dp.message(is_allowed_group, F.text)
 async def main_group_handler(message: types.Message):
@@ -563,32 +579,33 @@ async def main_group_handler(message: types.Message):
             else:
                 await wait_msg.edit_text("❌ Не удалось скачать видео.")
 
-        # --- НОВАЯ КОМАНДА: РАСШИФРОВКА ГС ---
+        # --- ОБНОВЛЕННАЯ КОМАНДА: РАСШИФРОВКА ГС И КРУЖКОВ ---
         elif msg_text in ["аура гс", "аура поясни", "аура чё там"]:
-            if not message.reply_to_message or not message.reply_to_message.voice:
-                await message.reply("Чтобы я расшифровала, ответь этой командой на голосовое сообщение! 🎧")
+            target_msg = message.reply_to_message
+            if not target_msg or not (target_msg.voice or target_msg.video_note):
+                await message.reply("Чтобы я расшифровала, ответь этой командой на ГС или кружок! 🎧🎬")
                 return
 
-            voice = message.reply_to_message.voice
-            v_uid = str(message.reply_to_message.from_user.id)
+            media = target_msg.voice if target_msg.voice else target_msg.video_note
+            v_uid = str(target_msg.from_user.id)
             wait_msg = await message.reply("📡 Аура прислушивается...")
-            ogg_p, wav_p = f"{voice.file_id}.ogg", f"{voice.file_id}.wav"
+            ogg_p, wav_p = f"{media.file_id}.ogg", f"{media.file_id}.wav"
 
             try:
-                file = await bot.get_file(voice.file_id)
+                file = await bot.get_file(media.file_id)
                 await bot.download_file(file.file_path, ogg_p)
-                audio = AudioSegment.from_ogg(ogg_p)
+                audio = AudioSegment.from_file(ogg_p)
                 audio.export(wav_p, format="wav")
                 with sr.AudioFile(wav_p) as source:
                     audio_data = recognizer.record(source)
                     text = await asyncio.to_thread(recognizer.recognize_google, audio_data, language="ru-RU")
 
                 if text:
-                    res = f"📝 <b>Текст голосового:</b>\n{text}"
+                    res = f"📝 <b>Текст расшифровки:</b>\n{text}"
                     matches_gs = re.findall(bad_pattern, text.lower())
                     if matches_gs:
                         if v_uid not in USER_MESSAGES:
-                            USER_MESSAGES[v_uid] = {"name": message.reply_to_message.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
+                            USER_MESSAGES[v_uid] = {"name": target_msg.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
                         fine_gs = len(matches_gs) * 10
                         USER_MESSAGES[v_uid]["balance"] = max(0, USER_MESSAGES[v_uid].get("balance", 0) - fine_gs)
                         res += f"\n\n🤫 <b>Аура всё слышит!</b> Автор оштрафован на <b>{fine_gs}</b> 💎"
@@ -597,7 +614,7 @@ async def main_group_handler(message: types.Message):
             except sr.UnknownValueError:
                 await wait_msg.edit_text("🛰 Не смогла разобрать ни слова.")
             except Exception as e:
-                print(f"ГС ошибка: {e}")
+                print(f"Ошибка: {e}")
                 await wait_msg.edit_text("❌ Ошибка расшифровки. Проверь наличие ffmpeg.")
             finally:
                 if os.path.exists(ogg_p): os.remove(ogg_p)
