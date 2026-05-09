@@ -134,7 +134,7 @@ WELCOME_VARIATIONS = [
     "Приветствуем, {name}! Я - бот Аура. Если ты здесь впервые, располагайся! Команды заработают после получения доступа. Меню: <b>Аура команды</b>."
 ]
 REJOIN_VARIATIONS = ["Привет, {name}! Рады тебя снова видеть.", "О, {name}, ты вернулся! С возвращением.", "{name}, снова привет! Без тебя было скучно.", "С возвращением, {name}! Мы уже и не надеялись."]
-LEAVE_VARIATIONS = ["Удачи, {name}!", "{name} покинул(а) чат. Увидимся.", "До встречи, {name}.", "Минус один. Счастливо, {name}!"]
+LEAVE_VARIATIONS = ["Удачи, {name}!", "{name} покинул(а) chat. Увидимся.", "До встречи, {name}.", "Минус один. Счастливо, {name}!"]
 LEAVE_REPEAT_VARIATIONS = ["Опять ушел? Ну, до связи, {name}.", "Снова покидаешь нас, {name}? Ладно, пока.", "Ну вот, опять ушел. Бывай, {name}."]
 
 BAD_WORDS = ["хуй", "пизд", "ебла", "сук", "бля", "гандон", "даун", "шлюх", "уеб", "чмо"]
@@ -195,7 +195,8 @@ HELP_TEXT = (
     "💰 <code>Аура баланс</code> - твой счет\n"
     "🏆 <code>Аура топ</code> - богачи чата\n"
     "🔥 <code>Аура ставка [сумма]</code> - казино\n"
-    "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n\n"
+    "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n"
+    "🚫 <code>Аура штраф [сумма]</code> - (только админам)\n\n"
     "<b>Доступные команды:</b>\n"
     "🎬 <code>Аура тт</code> - скачать видео (в ответ на ссылку)\n"
     "🎤 <code>Аура гс</code> - расшифровать ГС или кружок\n"
@@ -310,10 +311,8 @@ async def cb_transcribe_voice(callback: types.CallbackQuery):
     await callback.answer("Аура начинает слушать...")
     
     media = target_msg.voice if target_msg.voice else target_msg.video_note
-    v_uid = str(target_msg.from_user.id)
     wait_msg = await callback.message.edit_text("📡 Аура прислушивается...")
     ogg_p, wav_p = f"{media.file_id}.ogg", f"{media.file_id}.wav"
-    bad_pattern = r"(?i)\b(?:а|о|вы|по|на|при|у|ни)?(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо|хуе|хуя)[а-яё]*"
 
     try:
         file = await bot.get_file(media.file_id)
@@ -326,14 +325,6 @@ async def cb_transcribe_voice(callback: types.CallbackQuery):
 
         if text:
             res = f"📝 <b>Текст расшифровки:</b>\n{text}"
-            matches_gs = re.findall(bad_pattern, text.lower())
-            if matches_gs:
-                if v_uid not in USER_MESSAGES:
-                    USER_MESSAGES[v_uid] = {"name": target_msg.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
-                fine_gs = len(matches_gs) * 10
-                USER_MESSAGES[v_uid]["balance"] = max(0, USER_MESSAGES[v_uid].get("balance", 0) - fine_gs)
-                res += f"\n\n🤫 <b>Аура всё слышит!</b> Автор оштрафован на <b>{fine_gs}</b> 💎"
-                asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
             await wait_msg.edit_text(res)
     except sr.UnknownValueError:
         await wait_msg.edit_text("🛰 Не смогла разобрать ни слова")
@@ -400,7 +391,7 @@ async def main_group_handler(message: types.Message):
     bad_pattern = r"(?i)\b(?:а|о|вы|по|на|при|у|ни)?(?:хуй|пизд|ебла|сук|бля|гандон|даун|шлюх|уеб|чмо|хуе|хуя)[а-яё]*"
     matches = re.findall(bad_pattern, msg_text)
     
-    if matches:
+    if matches and not msg_text.startswith("аура"):
         count = len(matches)
         total_fine = count * 5
         USER_MESSAGES[uid]["balance"] = max(0, USER_MESSAGES[uid].get("balance", 0) - total_fine)
@@ -508,6 +499,43 @@ async def main_group_handler(message: types.Message):
             await message.reply(report_msg)
             asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
+        # --- НОВАЯ КОМАНДА: АДМИН-ШТРАФ ---
+        elif msg_text.startswith("аура штраф"):
+            # Проверяем, является ли отправитель админом чата
+            member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
+            if member.status not in ["administrator", "creator"]:
+                await message.reply("Куда мы лезем? У тебя нет прав на это! ✋")
+                return
+
+            if not message.reply_to_message:
+                await message.reply("Ответь этой командой на сообщение того, кого хочешь оштрафовать!")
+                return
+            
+            target_user = message.reply_to_message.from_user
+            t_uid = str(target_user.id)
+            
+            # Нельзя штрафовать саму Ауру или Владельца (тебя)
+            if t_uid == "8637150963" or t_uid == "6009369839":
+                await message.reply("Попытка оштрафовать высшие силы провалилась. ⚡")
+                return
+
+            try:
+                amount = int(msg_text.split()[2])
+            except:
+                await message.reply("Пиши: <code>Аура штраф [сумма]</code> (ответом на сообщение)")
+                return
+
+            if amount <= 0:
+                await message.reply("Сумма должна быть положительной!")
+                return
+
+            if t_uid not in USER_MESSAGES:
+                USER_MESSAGES[t_uid] = {"name": target_user.first_name, "times": [], "balance": 0, "last_farm": 0}
+            
+            USER_MESSAGES[t_uid]["balance"] = max(0, USER_MESSAGES[t_uid].get("balance", 0) - amount)
+            await message.reply(f"🚫 Админ-штраф! С баланса <a href='tg://user?id={t_uid}'>{target_user.first_name}</a> списано <b>{amount}</b> 💎")
+            asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
+
         elif msg_text.startswith("аура ставка"):
             uid_int = int(uid)
             if uid_int in RISK_COOLDOWN:
@@ -579,7 +607,7 @@ async def main_group_handler(message: types.Message):
             else:
                 await wait_msg.edit_text("❌ Не удалось скачать видео.")
 
-        # --- ОБНОВЛЕННАЯ КОМАНДА: РАСШИФРОВКА ГС И КРУЖКОВ ---
+        # --- ОБНОВЛЕННАЯ КОМАНДА: РАСШИФРОВКА БЕЗ ШТРАФОВ ---
         elif msg_text in ["аура гс", "аура поясни", "аура чё там"]:
             target_msg = message.reply_to_message
             if not target_msg or not (target_msg.voice or target_msg.video_note):
@@ -587,7 +615,6 @@ async def main_group_handler(message: types.Message):
                 return
 
             media = target_msg.voice if target_msg.voice else target_msg.video_note
-            v_uid = str(target_msg.from_user.id)
             wait_msg = await message.reply("📡 Аура прислушивается...")
             ogg_p, wav_p = f"{media.file_id}.ogg", f"{media.file_id}.wav"
 
@@ -602,14 +629,6 @@ async def main_group_handler(message: types.Message):
 
                 if text:
                     res = f"📝 <b>Текст расшифровки:</b>\n{text}"
-                    matches_gs = re.findall(bad_pattern, text.lower())
-                    if matches_gs:
-                        if v_uid not in USER_MESSAGES:
-                            USER_MESSAGES[v_uid] = {"name": target_msg.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
-                        fine_gs = len(matches_gs) * 10
-                        USER_MESSAGES[v_uid]["balance"] = max(0, USER_MESSAGES[v_uid].get("balance", 0) - fine_gs)
-                        res += f"\n\n🤫 <b>Аура всё слышит!</b> Автор оштрафован на <b>{fine_gs}</b> 💎"
-                        asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
                     await wait_msg.edit_text(res)
             except sr.UnknownValueError:
                 await wait_msg.edit_text("🛰 Не смогла разобрать ни слова.")
