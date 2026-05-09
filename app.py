@@ -19,6 +19,10 @@ from oauth2client.service_account import ServiceAccountCredentials
 # БИБЛИОТЕКА ДЛЯ СКАЧИВАНИЯ (нужно установить: pip install yt-dlp)
 import yt_dlp
 
+# --- НОВЫЕ БИБЛИОТЕКИ ДЛЯ ГС ---
+import speech_recognition as sr
+from pydub import AudioSegment
+
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
 
@@ -31,6 +35,9 @@ ALLOWED_USERS = get_ids('ALLOWED_USERS')
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
+
+# Инициализация распознавателя
+recognizer = sr.Recognizer()
 
 # --- ЛОГИКА GOOGLE ТАБЛИЦ ---
 def get_gsheet():
@@ -172,7 +179,8 @@ HELP_TEXT = (
     "🔥 <code>Аура ставка [сумма]</code> - казино\n"
     "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n\n"
     "<b>Доступные команды:</b>\n"
-    "🎬 <code>Аура тт скачать</code> - скачать видео из тиктока (в ответ на ссылку)\n"
+    "🎬 <code>Аура тт</code> - скачать видео (в ответ на ссылку)\n"
+    "🎤 <code>Аура гс</code> - расшифровать ГС (в ответ на ГС)\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
     "🎱 <code>Аура да нет [вопрос]</code>\n"
     "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
@@ -301,6 +309,12 @@ async def goodbye_member(message: types.Message):
         text = random.choice(LEAVE_VARIATIONS).format(name=name)
     await message.answer(text)
 
+# --- ОБРАБОТКА ГОЛОСОВЫХ (РЕДКИЙ ХИНТ) ---
+@dp.message(is_allowed_group, F.voice)
+async def voice_hint_handler(message: types.Message):
+    if random.random() < 0.10: # Шанс 10%
+        await message.reply("🤖 Вижу ГС! Если лень слушать, напиши в ответ: <code>Аура гс</code>")
+
 @dp.message(is_allowed_group, F.text)
 async def main_group_handler(message: types.Message):
     msg_text = message.text.lower()
@@ -397,10 +411,8 @@ async def main_group_handler(message: types.Message):
                 await message.reply("Переводить самому себе? Гениально.")
                 return
 
-            # --- ЛОГИКА КОМИССИИ ---
             fee = int(amount * 0.01)
             fee_label = "(1%)"
-            
             if amount < 100:
                 fee = 1
                 fee_label = "(1)"
@@ -480,7 +492,7 @@ async def main_group_handler(message: types.Message):
                 await asyncio.sleep(1)
                 await message.answer(random.choice(LOSE_TROLL_PHRASES))
 
-        elif msg_text == "аура тт скачать":
+        elif msg_text == "аура тт":
             if not message.reply_to_message or not message.reply_to_message.text:
                 await message.reply("Ответь этой командой на сообщение с ссылкой на TikTok!")
                 return
@@ -496,6 +508,52 @@ async def main_group_handler(message: types.Message):
                 await wait_msg.delete()
             else:
                 await wait_msg.edit_text("❌ Не удалось скачать видео.")
+
+        # --- НОВАЯ КОМАНДА: РАСШИФРОВКА ГС ---
+        elif msg_text in ["аура гс", "аура поясни", "аура чё там"]:
+            if not message.reply_to_message or not message.reply_to_message.voice:
+                await message.reply("Чтобы я расшифровала, ответь этой командой на голосовое сообщение! 🎧")
+                return
+
+            voice = message.reply_to_message.voice
+            v_uid = str(message.reply_to_message.from_user.id)
+            wait_msg = await message.reply("📡 <i>Аура вслушивается в голос...</i>")
+            ogg_p, wav_p = f"{voice.file_id}.ogg", f"{voice.file_id}.wav"
+
+            try:
+                file = await bot.get_file(voice.file_id)
+                await bot.download_file(file.file_path, ogg_p)
+
+                audio = AudioSegment.from_ogg(ogg_p)
+                audio.export(wav_p, format="wav")
+
+                with sr.AudioFile(wav_p) as source:
+                    audio_data = recognizer.record(source)
+                    # Фикс лагов: выносим распознавание в поток
+                    text = await asyncio.to_thread(recognizer.recognize_google, audio_data, language="ru-RU")
+
+                if text:
+                    res = f"📝 <b>Текст ГС:</b>\n\n«{text}»"
+                    matches_gs = re.findall(bad_pattern, text.lower())
+                    if matches_gs:
+                        # Фикс вылета: проверяем юзера в базе перед штрафом
+                        if v_uid not in USER_MESSAGES:
+                            USER_MESSAGES[v_uid] = {"name": message.reply_to_message.from_user.first_name, "times": [], "balance": 0, "last_farm": 0}
+                        
+                        fine_gs = len(matches_gs) * 10
+                        USER_MESSAGES[v_uid]["balance"] = max(0, USER_MESSAGES[v_uid].get("balance", 0) - fine_gs)
+                        res += f"\n\n🤫 <b>Аура всё слышит!</b> Автор оштрафован на <b>{fine_gs}</b> 💎"
+                        asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
+                    await wait_msg.edit_text(res)
+                else:
+                    await wait_msg.edit_text("🛰 Не смогла разобрать ни слова.")
+            except Exception as e:
+                print(f"ГС ошибка: {e}")
+                await wait_msg.edit_text("❌ Ошибка расшифровки. Проверь наличие ffmpeg.")
+            finally:
+                # Гарантированное удаление мусора
+                if os.path.exists(ogg_p): os.remove(ogg_p)
+                if os.path.exists(wav_p): os.remove(wav_p)
 
         elif "стата" in msg_text or "статистика" in msg_text:
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
