@@ -3,3 +3,5 @@ aiohttp
 gspread
 oauth2client
 yt-dlp
+SpeechRecognition
+pydub
