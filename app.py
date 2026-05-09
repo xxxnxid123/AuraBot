@@ -504,7 +504,7 @@ async def main_group_handler(message: types.Message):
             # Проверяем, является ли отправитель админом чата
             member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
             if member.status not in ["administrator", "creator"]:
-                await message.reply("Куда мы лезем? У тебя нет прав на это! ✋")
+                await message.reply("Куда мы лезем?")
                 return
 
             if not message.reply_to_message:
