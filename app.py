@@ -554,9 +554,9 @@ async def main_group_handler(message: types.Message):
             USER_MESSAGES[bot_id]["balance"] += actual_fine
             
             if t_uid == uid:
-                await message.reply(f"🚫 {random.choice(SELF_FINE_ANSWERS)}\nСписано <b>{actual_fine}</b> 💎")
+                await message.reply(f" {random.choice(SELF_FINE_ANSWERS)}\nСписано <b>{actual_fine}</b> 💎")
             else:
-                await message.reply(f"🚫 Админ-штраф! С баланса <a href='tg://user?id={t_uid}'>{target_user.first_name}</a> списано <b>{actual_fine}</b> 💎. Деньги ушли в казну.")
+                await message.reply(f" Админ-штраф! С баланса <a href='tg://user?id={t_uid}'>{target_user.first_name}</a> списано <b>{actual_fine}</b> 💎. Деньги ушли в казну.")
             
             asyncio.create_task(asyncio.to_thread(save_stats, USER_MESSAGES))
 
