@@ -4,13 +4,14 @@ import os
 import time
 import json
 import re
+import google.generativeai as genai
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.utils.link import create_tg_link
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 
 # БИБЛИОТЕКИ ДЛЯ ТАБЛИЦ
 import gspread
@@ -23,19 +24,14 @@ import yt_dlp
 import speech_recognition as sr
 from pydub import AudioSegment
 
-# --- НОВАЯ БИБЛИОТЕКА ДЛЯ ГЕНЕРАЦИИ (GEMINI) ---
-from google import genai
-
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
+GEMINI_KEY = os.environ.get('GEMINI_API_KEY')
 AURA_ID = "8637150963"
 
-# Инициализация клиента Gemini (если ключ есть)
-GEMINI_KEY = os.environ.get('GEMINI_API_KEY')
+# Настройка Gemini для генерации изображений
 if GEMINI_KEY:
-    client_genai = genai.Client(api_key=GEMINI_KEY)
-else:
-    client_genai = None
+    genai.configure(api_key=GEMINI_KEY)
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
@@ -223,6 +219,7 @@ HELP_TEXT = (
     "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n"
     "🚫 <code>Аура штраф [сумма]</code> - (только админам)\n\n"
     "<b>Доступные команды:</b>\n"
+    "🎨 <code>Аура арт [промпт]</code> - генерация изображения\n"
     "🎬 <code>Аура тт</code> - скачать видео (в ответ на ссылку)\n"
     "🎤 <code>Аура гс</code> - расшифровать ГС или кружок\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
@@ -444,7 +441,38 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        if msg_text == "аура фарм":
+        if msg_text.startswith("аура спроси"):
+            prompt = message.text[12:].strip()
+            if not prompt:
+                await message.reply("Напиши, что изобразить. Пример: <code>Аура нарисуй кота в космосе</code>")
+                return
+            
+            wait_msg = await message.reply("🎨 Аура берет кисти... Генерирую изображение, подожди.")
+            
+            try:
+                # Используем модель для генерации изображений
+                model = genai.GenerativeModel('gemini-2.5-flash-image')
+                # В Gemini API для генерации картинок используется метод generate_content с промптом
+                # Но так как gemini-2.5-flash-image - это специфическая модель, логика вызова зависит от версии SDK
+                # Мы используем стандартный вызов, ожидая байты изображения в ответе
+                result = await asyncio.to_thread(model.generate_content, prompt)
+                
+                if result and result.candidates[0].content.parts:
+                    # Поиск байтов изображения в частях ответа
+                    for part in result.candidates[0].content.parts:
+                        if hasattr(part, 'inline_data'):
+                            img_data = part.inline_data.data
+                            photo = BufferedInputFile(img_data, filename="aura_art.png")
+                            await message.answer_photo(photo, caption=f"🖼 <b>Результат по запросу:</b>\n<i>{prompt}</i>")
+                            await wait_msg.delete()
+                            return
+                
+                await wait_msg.edit_text("❌ Не удалось получить изображение от нейросети.")
+            except Exception as e:
+                print(f"Ошибка генерации: {e}")
+                await wait_msg.edit_text("❌ Произошла ошибка при генерации. Проверь API ключ и лимиты.")
+
+        elif msg_text == "аура фарм":
             u_data = USER_MESSAGES[uid]
             wait_time = 10800
             if now - u_data.get("last_farm", 0) < wait_time:
@@ -791,22 +819,6 @@ async def main_group_handler(message: types.Message):
 
         elif "кости пара" in msg_text: await message.reply(f"🎲 Выпало: <b>{random.randint(1, 6)}</b> и <b>{random.randint(1, 6)}</b>")
         elif "кости" in msg_text: await message.reply(f"🎲 Число: <b>{random.randint(1, 6)}</b>")
-        
-        # --- НОВЫЙ БЛОК: ГЕНЕРАЦИЯ (GEMINI) ---
-        elif client_genai and (msg_text.startswith("аура спроси") or len(msg_text) > 10):
-            # Если это длинное сообщение или явная просьба спросить
-            user_prompt = message.text[11:].strip() if msg_text.startswith("аура спроси") else message.text
-            
-            try:
-                response = client_genai.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=f"Ты — бот Аура. Стиль общения: современный, дерзкий, немного вайбовый, но по делу. Отвечай кратко (1-3 предложения). Вопрос: {user_prompt}"
-                )
-                if response.text:
-                    await message.reply(response.text)
-            except Exception as e:
-                print(f"Ошибка Gemini: {e}")
-
         return
 
 @dp.message(is_private_chat, is_allowed_user, F.text.startswith("/msg "))
