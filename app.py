@@ -4,14 +4,13 @@ import os
 import time
 import json
 import re
-import google.generativeai as genai
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.utils.link import create_tg_link
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 
 # БИБЛИОТЕКИ ДЛЯ ТАБЛИЦ
 import gspread
@@ -24,14 +23,19 @@ import yt_dlp
 import speech_recognition as sr
 from pydub import AudioSegment
 
+# --- БИБЛИОТЕКА ДЛЯ НЕЙРОСЕТИ (GEMINI) ---
+import google.generativeai as genai
+
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
 GEMINI_KEY = os.environ.get('GEMINI_API_KEY')
 AURA_ID = "8637150963"
 
-# Настройка Gemini для генерации изображений
+# Настройка Gemini
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
+    # Используем стабильную модель 1.5 Flash
+    vision_model = genai.GenerativeModel('gemini-1.5-flash')
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
@@ -219,7 +223,6 @@ HELP_TEXT = (
     "💸 <code>Аура перевод [сумма]</code> - (ответом на сообщение)\n"
     "🚫 <code>Аура штраф [сумма]</code> - (только админам)\n\n"
     "<b>Доступные команды:</b>\n"
-    "🎨 <code>Аура арт [промпт]</code> - генерация изображения\n"
     "🎬 <code>Аура тт</code> - скачать видео (в ответ на ссылку)\n"
     "🎤 <code>Аура гс</code> - расшифровать ГС или кружок\n"
     "🔮 <code>Аура вероятность [текст]</code>\n"
@@ -227,6 +230,7 @@ HELP_TEXT = (
     "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
     "📊 <code>Аура стата [час/сутки/неделя/месяц]</code>\n"
     "💬 <code>Аура фраза</code> - выдать базу\n"
+    "🎨 <code>Аура арт [описание]</code> - сгенерировать изображение\n"
     "🍀 <code>Аура удача</code>\n"
     "🎲 <code>Аура кости / кости пара</code>\n"
     "🔢 <code>Аура число [от] [до]</code>\n"
@@ -441,38 +445,7 @@ async def main_group_handler(message: types.Message):
         if int(uid) not in ALLOWED_USERS:
             return
 
-        if msg_text.startswith("аура спроси"):
-            prompt = message.text[12:].strip()
-            if not prompt:
-                await message.reply("Напиши, что изобразить. Пример: <code>Аура нарисуй кота в космосе</code>")
-                return
-            
-            wait_msg = await message.reply("🎨 Аура берет кисти... Генерирую изображение, подожди.")
-            
-            try:
-                # Используем модель для генерации изображений
-                model = genai.GenerativeModel('gemini-2.5-flash-image')
-                # В Gemini API для генерации картинок используется метод generate_content с промптом
-                # Но так как gemini-2.5-flash-image - это специфическая модель, логика вызова зависит от версии SDK
-                # Мы используем стандартный вызов, ожидая байты изображения в ответе
-                result = await asyncio.to_thread(model.generate_content, prompt)
-                
-                if result and result.candidates[0].content.parts:
-                    # Поиск байтов изображения в частях ответа
-                    for part in result.candidates[0].content.parts:
-                        if hasattr(part, 'inline_data'):
-                            img_data = part.inline_data.data
-                            photo = BufferedInputFile(img_data, filename="aura_art.png")
-                            await message.answer_photo(photo, caption=f"🖼 <b>Результат по запросу:</b>\n<i>{prompt}</i>")
-                            await wait_msg.delete()
-                            return
-                
-                await wait_msg.edit_text("❌ Не удалось получить изображение от нейросети.")
-            except Exception as e:
-                print(f"Ошибка генерации: {e}")
-                await wait_msg.edit_text("❌ Произошла ошибка при генерации. Проверь API ключ и лимиты.")
-
-        elif msg_text == "аура фарм":
+        if msg_text == "аура фарм":
             u_data = USER_MESSAGES[uid]
             wait_time = 10800
             if now - u_data.get("last_farm", 0) < wait_time:
@@ -699,6 +672,27 @@ async def main_group_handler(message: types.Message):
             finally:
                 if os.path.exists(ogg_p): os.remove(ogg_p)
                 if os.path.exists(wav_p): os.remove(wav_p)
+
+        elif msg_text.startswith("аура арт"):
+            if not GEMINI_KEY:
+                await message.reply("❌ API ключ Gemini не настроен!")
+                return
+            
+            prompt = message.text[8:].strip()
+            if not prompt:
+                await message.reply("Напиши запрос, например: <code>Аура арт кот на дирижабле</code>")
+                return
+            
+            wait_msg = await message.reply("🎨 Аура начинает творить... Это займет время.")
+            try:
+                # Генерация текста/описания через Gemini
+                full_prompt = f"Ты - искусственный интеллект Аура. Опиши очень детально и красиво арт на тему: {prompt}. Описание должно быть на русском языке."
+                response = await asyncio.to_thread(vision_model.generate_content, full_prompt)
+                
+                await wait_msg.edit_text(f"🎨 <b>Моё видение:</b>\n\n{response.text}")
+            except Exception as e:
+                print(f"Ошибка Gemini: {e}")
+                await wait_msg.edit_text("❌ Не удалось связаться с нейросетью.")
 
         elif "стата" in msg_text or "статистика" in msg_text:
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
