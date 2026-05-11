@@ -5,5 +5,3 @@ oauth2client
 yt-dlp
 SpeechRecognition
 pydub
-google-genai
-pillow
