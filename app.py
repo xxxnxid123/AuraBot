@@ -4,13 +4,14 @@ import os
 import time
 import json
 import re
+import io
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.utils.link import create_tg_link
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 
 # БИБЛИОТЕКИ ДЛЯ ТАБЛИЦ
 import gspread
@@ -23,19 +24,16 @@ import yt_dlp
 import speech_recognition as sr
 from pydub import AudioSegment
 
-# --- БИБЛИОТЕКА ДЛЯ НЕЙРОСЕТИ (GEMINI) ---
-import google.generativeai as genai
+# --- БИБЛИОТЕКА GOOGLE GENAI ---
+from google import genai
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get('BOT_TOKEN')
-GEMINI_KEY = os.environ.get('GEMINI_API_KEY')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') # Нужно добавить в переменные окружения
 AURA_ID = "8637150963"
 
-# Настройка Gemini
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
-    # Используем стабильную модель 1.5 Flash
-    vision_model = genai.GenerativeModel('gemini-1.5-flash')
+# Инициализация клиента Gemini
+client_genai = genai.Client(api_key=GEMINI_API_KEY)
 
 def get_ids(env_name):
     data = os.environ.get(env_name, "")
@@ -230,7 +228,7 @@ HELP_TEXT = (
     "⚖️ <code>Аура выбор [вар 1] или [вар 2]</code>\n"
     "📊 <code>Аура стата [час/сутки/неделя/месяц]</code>\n"
     "💬 <code>Аура фраза</code> - выдать базу\n"
-    "🎨 <code>Аура арт [описание]</code> - сгенерировать изображение\n"
+    "🎨 <code>Аура арт [запрос]</code> - генерация изображения\n"
     "🍀 <code>Аура удача</code>\n"
     "🎲 <code>Аура кости / кости пара</code>\n"
     "🔢 <code>Аура число [от] [до]</code>\n"
@@ -674,25 +672,33 @@ async def main_group_handler(message: types.Message):
                 if os.path.exists(wav_p): os.remove(wav_p)
 
         elif msg_text.startswith("аура арт"):
-            if not GEMINI_KEY:
-                await message.reply("❌ API ключ Gemini не настроен!")
-                return
-            
             prompt = message.text[8:].strip()
             if not prompt:
-                await message.reply("Напиши запрос, например: <code>Аура арт кот на дирижабле</code>")
+                await message.reply("Напиши запрос для картинки, например: <code>Аура арт космонавт на коте</code>")
                 return
             
-            wait_msg = await message.reply("🎨 Аура начинает творить... Это займет время.")
+            await bot.send_chat_action(message.chat.id, "upload_photo")
+            wait_msg = await message.reply("🎨 Аура начинает рисовать... Подожди немного.")
+            
             try:
-                # Генерация текста/описания через Gemini
-                full_prompt = f"Ты - искусственный интеллект Аура. Опиши очень детально и красиво арт на тему: {prompt}. Описание должно быть на русском языке."
-                response = await asyncio.to_thread(vision_model.generate_content, full_prompt)
+                # Генерация через gemini-2.5-flash-image
+                response = await asyncio.to_thread(
+                    client_genai.models.generate_images,
+                    model='gemini-2.5-flash-image',
+                    prompt=prompt,
+                    config={'number_of_images': 1}
+                )
                 
-                await wait_msg.edit_text(f"🎨 <b>Моё видение:</b>\n\n{response.text}")
+                if response.generated_images:
+                    image_data = response.generated_images[0].image_bytes
+                    photo = BufferedInputFile(image_data, filename="aura_art.png")
+                    await message.reply_photo(photo, caption=f"✨ Мой арт по запросу: <i>{prompt}</i>")
+                    await wait_msg.delete()
+                else:
+                    await wait_msg.edit_text("❌ Модель не смогла создать изображение.")
             except Exception as e:
-                print(f"Ошибка Gemini: {e}")
-                await wait_msg.edit_text("❌ Не удалось связаться с нейросетью.")
+                print(f"Ошибка Gemini Art: {e}")
+                await wait_msg.edit_text("❌ Ошибка при генерации арта. Проверь API ключ.")
 
         elif "стата" in msg_text or "статистика" in msg_text:
             periods = {"час": 3600, "сутки": 86400, "неделя": 604800, "месяц": 2592000}
