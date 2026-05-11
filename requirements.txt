@@ -6,3 +6,4 @@ yt-dlp
 SpeechRecognition
 pydub
 google-generativeai
+Pillow
