@@ -104,7 +104,7 @@ def save_stats(stats_data):
 def get_status(balance):
     if balance < 500: return "Нищий (1)"
     if balance < 1500: return "Обычный (2)"
-    if balance < 4000: return "Суетливый (3)"
+    if balance < 4000: return "Солидный (3)"
     if balance < 10000: return "Жирный (4)"
     if balance < 25000: return "У тебя огромный аура (5)"
     if balance < 50000: return "Легенда (6)"
